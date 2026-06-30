@@ -1,0 +1,371 @@
+// ─────────────────────────────────────────────────────────────
+// TAG - MPS : Prisma schema
+// Manpower Plan vs Actual System for TAG Corporation
+//
+// Relationship model (documented in README):
+//   Unit (Div)  1───*  CostCenter
+//   Department  1───*  CostCenter  (functional grouping for reports)
+//   CostCenter is uniquely identified by (unitId, costCode) because the
+//   same cost code (e.g. HFRGN / HRBMD) legitimately exists under
+//   different units.
+//   ManpowerPlan / ManpowerActual reference Unit + CostCenter + Vendor + type.
+// ─────────────────────────────────────────────────────────────
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===================== ENUMS =====================
+
+enum RoleCode {
+  SUPER_ADMIN
+  HR_ADMIN
+  MANAGEMENT
+  USER_MASTER
+}
+
+enum MasterStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum ManpowerType {
+  MALE
+  FEMALE
+  SKILLED
+  SEMI_SKILLED
+  UNSKILLED
+  STAFF
+  GENERAL
+}
+
+enum PlanStatus {
+  DRAFT
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum NotificationType {
+  SHORTAGE
+  CRITICAL_SHORTAGE
+  VENDOR_UNDERPERFORMANCE
+  PENDING_APPROVAL
+  MISSING_ATTENDANCE
+  SYSTEM
+}
+
+enum NotificationSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+// ===================== AUTH / RBAC =====================
+
+model Role {
+  id          String   @id @default(cuid())
+  code        RoleCode @unique
+  name        String
+  description String?
+  isSystem    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users User[]
+
+  @@map("roles")
+}
+
+model User {
+  id           String     @id @default(cuid())
+  name         String
+  username     String     @unique
+  email        String     @unique
+  passwordHash String
+  status       MasterStatus @default(ACTIVE)
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id])
+
+  lastLoginAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  deletedAt    DateTime?
+
+  costCenters   UserCostCenter[]
+  refreshTokens RefreshToken[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+
+  plansCreated   ManpowerPlan[] @relation("PlanCreatedBy")
+  plansApproved  ManpowerPlan[] @relation("PlanApprovedBy")
+  actualsCreated ManpowerActual[] @relation("ActualCreatedBy")
+  planHistory    PlanStatusHistory[]
+
+  @@index([roleId])
+  @@index([status])
+  @@map("users")
+}
+
+// Cost-center scoped access (primarily for the USER_MASTER role)
+model UserCostCenter {
+  id           String   @id @default(cuid())
+  userId       String
+  costCenterId String
+  createdAt    DateTime @default(now())
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  costCenter CostCenter @relation(fields: [costCenterId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, costCenterId])
+  @@index([userId])
+  @@index([costCenterId])
+  @@map("user_cost_centers")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+// ===================== MASTERS =====================
+
+model Vendor {
+  id            String       @id @default(cuid())
+  vendorCode    String       @unique
+  vendorName    String
+  contactPerson String?
+  mobileNumber  String?
+  gstNumber     String?
+  status        MasterStatus @default(ACTIVE)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  deletedAt     DateTime?
+
+  plans   ManpowerPlan[]
+  actuals ManpowerActual[]
+
+  @@index([status])
+  @@map("vendors")
+}
+
+model Unit {
+  id        String       @id @default(cuid())
+  code      String       @unique
+  name      String
+  status    MasterStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  deletedAt DateTime?
+
+  costCenters CostCenter[]
+  plans       ManpowerPlan[]
+  actuals     ManpowerActual[]
+
+  @@index([status])
+  @@map("units")
+}
+
+model Department {
+  id        String       @id @default(cuid())
+  code      String       @unique
+  name      String
+  status    MasterStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  deletedAt DateTime?
+
+  costCenters CostCenter[]
+
+  @@index([status])
+  @@map("departments")
+}
+
+model CostCenter {
+  id           String       @id @default(cuid())
+  costCode     String
+  costCentre   String
+  unitId       String
+  departmentId String?
+  status       MasterStatus @default(ACTIVE)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  deletedAt    DateTime?
+
+  unit       Unit        @relation(fields: [unitId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id])
+
+  userScopes UserCostCenter[]
+  plans      ManpowerPlan[]
+  actuals    ManpowerActual[]
+
+  // Same cost code can exist under different units (HFRGN in SV & U2)
+  @@unique([unitId, costCode])
+  @@index([unitId])
+  @@index([departmentId])
+  @@index([status])
+  @@map("cost_centers")
+}
+
+// ===================== MANPOWER PLAN =====================
+
+model ManpowerPlan {
+  id           String       @id @default(cuid())
+  year         Int
+  month        Int // 1-12
+  unitId       String
+  costCenterId String
+  vendorId     String
+  genderOrType ManpowerType
+  plannedCount Int
+  remarks      String?
+  status       PlanStatus   @default(DRAFT)
+
+  createdById      String
+  approvedById     String?
+  approvedAt       DateTime?
+  rejectionRemarks String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  unit       Unit       @relation(fields: [unitId], references: [id])
+  costCenter CostCenter @relation(fields: [costCenterId], references: [id])
+  vendor     Vendor     @relation(fields: [vendorId], references: [id])
+  createdBy  User       @relation("PlanCreatedBy", fields: [createdById], references: [id])
+  approvedBy User?      @relation("PlanApprovedBy", fields: [approvedById], references: [id])
+
+  history PlanStatusHistory[]
+
+  @@unique([year, month, unitId, costCenterId, vendorId, genderOrType], name: "plan_unique_key")
+  @@index([year, month])
+  @@index([unitId])
+  @@index([costCenterId])
+  @@index([vendorId])
+  @@index([status])
+  @@map("manpower_plans")
+}
+
+model PlanStatusHistory {
+  id         String      @id @default(cuid())
+  planId     String
+  fromStatus PlanStatus?
+  toStatus   PlanStatus
+  remarks    String?
+  actionById String
+  createdAt  DateTime    @default(now())
+
+  plan     ManpowerPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  actionBy User         @relation(fields: [actionById], references: [id])
+
+  @@index([planId])
+  @@map("plan_status_history")
+}
+
+// ===================== MANPOWER ACTUAL =====================
+
+model ManpowerActual {
+  id           String       @id @default(cuid())
+  date         DateTime     @db.Date
+  unitId       String
+  costCenterId String
+  vendorId     String
+  type         ManpowerType
+  actualCount  Int
+  shortage     Int          @default(0)
+  excess       Int          @default(0)
+  remarks      String?
+
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  unit       Unit       @relation(fields: [unitId], references: [id])
+  costCenter CostCenter @relation(fields: [costCenterId], references: [id])
+  vendor     Vendor     @relation(fields: [vendorId], references: [id])
+  createdBy  User       @relation("ActualCreatedBy", fields: [createdById], references: [id])
+
+  @@unique([date, unitId, costCenterId, vendorId, type], name: "actual_unique_key")
+  @@index([date])
+  @@index([unitId])
+  @@index([costCenterId])
+  @@index([vendorId])
+  @@map("manpower_actuals")
+}
+
+// ===================== NOTIFICATIONS =====================
+
+model Notification {
+  id        String               @id @default(cuid())
+  title     String
+  message   String
+  type      NotificationType     @default(SYSTEM)
+  severity  NotificationSeverity @default(INFO)
+  userId    String?
+  roleCode  RoleCode?
+  link      String?
+  metadata  Json?
+  isRead    Boolean              @default(false)
+  readAt    DateTime?
+  createdAt DateTime             @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([roleCode])
+  @@index([isRead])
+  @@map("notifications")
+}
+
+// ===================== AUDIT LOG =====================
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String?
+  action     String
+  module     String
+  entityType String?
+  entityId   String?
+  metadata   Json?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([module])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ===================== SETTINGS =====================
+
+model Setting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     Json
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
