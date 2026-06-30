@@ -6,7 +6,7 @@ import { z } from 'zod';
 import { motion } from 'framer-motion';
 import { toast } from 'sonner';
 import { Eye, EyeOff, LogIn } from 'lucide-react';
-import { Logo } from '@/components/Logo';
+import { Logo, LogoLockup } from '@/components/Logo';
 import { Button, Input, Label, Spinner } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { apiErrorMessage } from '@/services/api';
@@ -43,7 +43,9 @@ export default function LoginPage() {
       <div className="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-brand-800 p-12 text-white lg:flex">
         <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-accent/20 blur-3xl" />
         <div className="absolute -bottom-24 -left-24 h-96 w-96 rounded-full bg-brand-600/40 blur-3xl" />
-        <Logo size={48} variant="light" />
+        <div className="rounded-2xl bg-white/95 p-5 shadow-lg w-fit">
+          <LogoLockup height={84} />
+        </div>
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
           <h1 className="text-4xl font-extrabold leading-tight">
             Manpower Plan <span className="text-accent">vs</span> Actual
