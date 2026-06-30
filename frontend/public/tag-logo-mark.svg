@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 134" role="img" aria-label="TAG">
-  <!-- TAG mark only (no tagline). Brand colours: grey #6E6F71, red #C8322B -->
-  <g font-family="'Arial Black', Arial, Helvetica, sans-serif" font-weight="900" font-size="150">
-    <text x="54" y="128" text-anchor="middle" fill="#6E6F71">T</text>
-    <text x="266" y="128" text-anchor="middle" fill="#6E6F71">G</text>
-  </g>
-  <polygon points="143,21 177,21 214,128 106,128" fill="#C8322B"/>
-  <polygon points="160,46 138,78 150,78 150,128 170,128 170,78 182,78" fill="#FFFFFF"/>
-</svg>
