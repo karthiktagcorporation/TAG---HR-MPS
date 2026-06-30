@@ -43,9 +43,7 @@ export default function LoginPage() {
       <div className="relative hidden w-1/2 flex-col justify-between overflow-hidden bg-brand-800 p-12 text-white lg:flex">
         <div className="absolute -right-24 -top-24 h-96 w-96 rounded-full bg-accent/20 blur-3xl" />
         <div className="absolute -bottom-24 -left-24 h-96 w-96 rounded-full bg-brand-600/40 blur-3xl" />
-        <div className="rounded-2xl bg-white/95 p-5 shadow-lg w-fit">
-          <LogoLockup height={84} />
-        </div>
+        <LogoLockup height={88} />
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
           <h1 className="text-4xl font-extrabold leading-tight">
             Manpower Plan <span className="text-accent">vs</span> Actual
@@ -69,7 +67,7 @@ export default function LoginPage() {
       <div className="flex w-full items-center justify-center p-6 lg:w-1/2">
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="w-full max-w-md">
           <div className="mb-8 lg:hidden">
-            <Logo size={44} />
+            <Logo size={30} chip />
           </div>
           <h2 className="text-2xl font-bold">Sign in to your account</h2>
           <p className="mt-1 text-sm text-muted-foreground">Enter your credentials to access the dashboard.</p>

@@ -23,7 +23,7 @@ export function Sidebar({ collapsed, mobileOpen, onCloseMobile }: { collapsed: b
         )}
       >
         <div className="flex h-16 items-center border-b border-white/10 px-4">
-          {collapsed ? <Logo size={36} showText={false} /> : <Logo size={36} variant="light" />}
+          {collapsed ? <Logo size={26} showText={false} chip /> : <Logo size={26} chip light />}
         </div>
 
         <nav className="flex-1 space-y-4 overflow-y-auto scrollbar-thin p-3">

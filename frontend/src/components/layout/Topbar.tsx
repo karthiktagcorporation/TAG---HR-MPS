@@ -49,7 +49,7 @@ export function Topbar({ onToggleSidebar, onToggleMobile, collapsed }: { onToggl
           <Menu className="h-5 w-5" />
         </Button>
         <div className="lg:hidden">
-          <Logo size={32} showText={false} />
+          <Logo size={22} showText={false} chip />
         </div>
       </div>
 
