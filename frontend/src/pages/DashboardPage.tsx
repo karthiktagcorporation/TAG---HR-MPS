@@ -4,7 +4,7 @@ import {
   Users, UserCheck, TrendingDown, TrendingUp, Building2, Boxes, Percent, ClipboardCheck,
 } from 'lucide-react';
 import {
-  Bar, BarChart, CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer,
+  Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer,
   Tooltip, XAxis, YAxis, Area, AreaChart,
 } from 'recharts';
 import { PageHeader } from '@/components/PageHeader';
@@ -14,8 +14,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
 import { LoadingState, ErrorState, EmptyState } from '@/components/States';
 import { dashboardApi } from '@/services/resources';
 import { apiErrorMessage } from '@/services/api';
-
-const COLORS = ['#1E3A8A', '#F97316', '#0EA5E9', '#10B981', '#8B5CF6', '#EF4444', '#F59E0B'];
 
 function ChartCard({ title, children, empty }: { title: string; children: React.ReactNode; empty?: boolean }) {
   return (
@@ -33,7 +31,7 @@ export default function DashboardPage() {
   const [period, setPeriod] = useState<PeriodValue>({ year: now.getFullYear(), month: now.getMonth() + 1 });
 
   const params = useMemo(
-    () => ({ year: period.year, month: period.month, unitId: period.unitId, costCenterId: period.costCenterId, vendorId: period.vendorId }),
+    () => ({ year: period.year, month: period.month, unitId: period.unitId, costCenterId: period.costCenterId }),
     [period],
   );
 
@@ -48,7 +46,7 @@ export default function DashboardPage() {
         title="Executive Dashboard"
         subtitle="Plan vs Actual manpower overview in near real time"
         breadcrumbs={['TAG - MPS', 'Dashboard']}
-        actions={<PeriodFilters value={period} onChange={setPeriod} show={{ unit: true, vendor: true }} />}
+        actions={<PeriodFilters value={period} onChange={setPeriod} show={{ unit: true, costCenter: true }} />}
       />
 
       {isLoading && <LoadingState rows={8} />}
@@ -105,31 +103,18 @@ export default function DashboardPage() {
           </div>
 
           {/* Row 2 */}
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            <ChartCard title="Gender / Type Distribution" empty={!data.charts.genderDistribution.length}>
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <ChartCard title="Plan vs Actual (by Cost Center)" empty={!data.charts.planVsActualByCostCenter.length}>
               <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={data.charts.genderDistribution} dataKey="value" nameKey="label" cx="50%" cy="50%" outerRadius={80} label>
-                    {data.charts.genderDistribution.map((_, i) => (
-                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
+                <BarChart data={data.charts.planVsActualByCostCenter} layout="vertical" margin={{ left: 20 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                  <XAxis type="number" fontSize={12} />
+                  <YAxis type="category" dataKey="label" width={110} fontSize={10} />
+                  <Tooltip contentStyle={{ borderRadius: 8 }} />
                   <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            </ChartCard>
-
-            <ChartCard title="Vendor Allocation" empty={!data.charts.vendorAllocation.length}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={data.charts.vendorAllocation.slice(0, 8)} dataKey="value" nameKey="label" cx="50%" cy="50%" innerRadius={40} outerRadius={80}>
-                    {data.charts.vendorAllocation.slice(0, 8).map((_, i) => (
-                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                </PieChart>
+                  <Bar dataKey="planned" name="Planned" fill="#94A3B8" radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="actual" name="Actual" fill="#1E3A8A" radius={[0, 4, 4, 0]} />
+                </BarChart>
               </ResponsiveContainer>
             </ChartCard>
 
@@ -147,24 +132,10 @@ export default function DashboardPage() {
           </div>
 
           {/* Row 3 */}
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <ChartCard title="Vendor Performance (Fulfillment)" empty={!data.charts.vendorPerformance.length}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data.charts.vendorPerformance} layout="vertical" margin={{ left: 20 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis type="number" fontSize={12} />
-                  <YAxis type="category" dataKey="label" width={120} fontSize={10} />
-                  <Tooltip contentStyle={{ borderRadius: 8 }} />
-                  <Legend />
-                  <Bar dataKey="planned" name="Planned" fill="#94A3B8" radius={[0, 4, 4, 0]} />
-                  <Bar dataKey="actual" name="Actual" fill="#1E3A8A" radius={[0, 4, 4, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartCard>
-
+          <div className="grid grid-cols-1 gap-6">
             <ChartCard title="Top Cost Center Shortage" empty={!data.charts.costCenterAnalysis.length}>
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data.charts.costCenterAnalysis.slice(0, 8)}>
+                <BarChart data={data.charts.costCenterAnalysis.slice(0, 10)}>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis dataKey="label" fontSize={10} angle={-15} textAnchor="end" height={50} />
                   <YAxis fontSize={12} />

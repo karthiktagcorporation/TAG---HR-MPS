@@ -15,7 +15,7 @@ export default function VariancePage() {
   const now = new Date();
   const [period, setPeriod] = useState<PeriodValue>({ year: now.getFullYear(), month: now.getMonth() + 1 });
   const params = useMemo(
-    () => ({ year: period.year, month: period.month, unitId: period.unitId, costCenterId: period.costCenterId, vendorId: period.vendorId }),
+    () => ({ year: period.year, month: period.month, unitId: period.unitId, costCenterId: period.costCenterId }),
     [period],
   );
 
@@ -43,7 +43,7 @@ export default function VariancePage() {
       />
 
       <FilterBar>
-        <PeriodFilters value={period} onChange={setPeriod} show={{ unit: true, costCenter: true, vendor: true }} />
+        <PeriodFilters value={period} onChange={setPeriod} show={{ unit: true, costCenter: true }} />
       </FilterBar>
 
       {dash && (

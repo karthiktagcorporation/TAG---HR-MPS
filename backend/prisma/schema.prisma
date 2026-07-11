@@ -4,11 +4,11 @@
 //
 // Relationship model (documented in README):
 //   Unit (Div)  1───*  CostCenter
-//   Department  1───*  CostCenter  (functional grouping for reports)
 //   CostCenter is uniquely identified by (unitId, costCode) because the
 //   same cost code (e.g. HFRGN / HRBMD) legitimately exists under
 //   different units.
-//   ManpowerPlan / ManpowerActual reference Unit + CostCenter + Vendor + type.
+//   ManpowerPlan  = one row per (year, month, costCenter)
+//   ManpowerActual = one row per (date, costCenter)
 // ─────────────────────────────────────────────────────────────
 
 generator client {
@@ -32,16 +32,6 @@ enum RoleCode {
 enum MasterStatus {
   ACTIVE
   INACTIVE
-}
-
-enum ManpowerType {
-  MALE
-  FEMALE
-  SKILLED
-  SEMI_SKILLED
-  UNSKILLED
-  STAFF
-  GENERAL
 }
 
 enum PlanStatus {
@@ -159,9 +149,6 @@ model Vendor {
   updatedAt     DateTime     @updatedAt
   deletedAt     DateTime?
 
-  plans   ManpowerPlan[]
-  actuals ManpowerActual[]
-
   @@index([status])
   @@map("vendors")
 }
@@ -183,34 +170,17 @@ model Unit {
   @@map("units")
 }
 
-model Department {
-  id        String       @id @default(cuid())
-  code      String       @unique
-  name      String
-  status    MasterStatus @default(ACTIVE)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  deletedAt DateTime?
-
-  costCenters CostCenter[]
-
-  @@index([status])
-  @@map("departments")
-}
-
 model CostCenter {
-  id           String       @id @default(cuid())
-  costCode     String
-  costCentre   String
-  unitId       String
-  departmentId String?
-  status       MasterStatus @default(ACTIVE)
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  deletedAt    DateTime?
+  id         String       @id @default(cuid())
+  costCode   String
+  costCentre String
+  unitId     String
+  status     MasterStatus @default(ACTIVE)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  deletedAt  DateTime?
 
-  unit       Unit        @relation(fields: [unitId], references: [id])
-  department Department? @relation(fields: [departmentId], references: [id])
+  unit Unit @relation(fields: [unitId], references: [id])
 
   userScopes UserCostCenter[]
   plans      ManpowerPlan[]
@@ -219,7 +189,6 @@ model CostCenter {
   // Same cost code can exist under different units (HFRGN in SV & U2)
   @@unique([unitId, costCode])
   @@index([unitId])
-  @@index([departmentId])
   @@index([status])
   @@map("cost_centers")
 }
@@ -232,11 +201,9 @@ model ManpowerPlan {
   month        Int // 1-12
   unitId       String
   costCenterId String
-  vendorId     String
-  genderOrType ManpowerType
   plannedCount Int
   remarks      String?
-  status       PlanStatus   @default(DRAFT)
+  status       PlanStatus @default(DRAFT)
 
   createdById      String
   approvedById     String?
@@ -249,17 +216,15 @@ model ManpowerPlan {
 
   unit       Unit       @relation(fields: [unitId], references: [id])
   costCenter CostCenter @relation(fields: [costCenterId], references: [id])
-  vendor     Vendor     @relation(fields: [vendorId], references: [id])
   createdBy  User       @relation("PlanCreatedBy", fields: [createdById], references: [id])
   approvedBy User?      @relation("PlanApprovedBy", fields: [approvedById], references: [id])
 
   history PlanStatusHistory[]
 
-  @@unique([year, month, unitId, costCenterId, vendorId, genderOrType], name: "plan_unique_key")
+  @@unique([year, month, costCenterId], name: "plan_unique_key")
   @@index([year, month])
   @@index([unitId])
   @@index([costCenterId])
-  @@index([vendorId])
   @@index([status])
   @@map("manpower_plans")
 }
@@ -284,14 +249,12 @@ model PlanStatusHistory {
 
 model ManpowerActual {
   id           String       @id @default(cuid())
-  date         DateTime     @db.Date
+  date         DateTime @db.Date
   unitId       String
   costCenterId String
-  vendorId     String
-  type         ManpowerType
   actualCount  Int
-  shortage     Int          @default(0)
-  excess       Int          @default(0)
+  shortage     Int      @default(0)
+  excess       Int      @default(0)
   remarks      String?
 
   createdById String
@@ -301,14 +264,12 @@ model ManpowerActual {
 
   unit       Unit       @relation(fields: [unitId], references: [id])
   costCenter CostCenter @relation(fields: [costCenterId], references: [id])
-  vendor     Vendor     @relation(fields: [vendorId], references: [id])
   createdBy  User       @relation("ActualCreatedBy", fields: [createdById], references: [id])
 
-  @@unique([date, unitId, costCenterId, vendorId, type], name: "actual_unique_key")
+  @@unique([date, costCenterId], name: "actual_unique_key")
   @@index([date])
   @@index([unitId])
   @@index([costCenterId])
-  @@index([vendorId])
   @@map("manpower_actuals")
 }
 

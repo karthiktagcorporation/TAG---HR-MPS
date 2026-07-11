@@ -2,11 +2,12 @@ import { Prisma, PlanStatus } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '../../utils/errors';
 import { buildPaginationMeta } from '../../utils/apiResponse';
+import { notificationService } from '../notifications/notification.service';
+import { actualService } from '../actuals/actual.service';
 
 const include = {
   unit: true,
-  costCenter: { include: { unit: true, department: true } },
-  vendor: true,
+  costCenter: { include: { unit: true } },
   createdBy: { select: { id: true, name: true } },
   approvedBy: { select: { id: true, name: true } },
 };
@@ -19,6 +20,25 @@ interface ListArgs {
   filters: Record<string, unknown>;
 }
 
+export interface GridRow {
+  costCenterId: string;
+  plannedCount: number;
+  remarks?: string | null;
+}
+
+async function notifyApprovers(count: number, actorName: string) {
+  for (const roleCode of ['HR_ADMIN', 'SUPER_ADMIN'] as const) {
+    await notificationService.create({
+      title: 'Manpower plan awaiting approval',
+      message: `${actorName} submitted ${count} plan row(s) for approval.`,
+      type: 'PENDING_APPROVAL',
+      severity: 'WARNING',
+      roleCode,
+      link: '/plans',
+    });
+  }
+}
+
 export const planService = {
   async list(args: ListArgs) {
     const { page, pageSize, sortBy, sortDir, filters } = args;
@@ -28,7 +48,6 @@ export const planService = {
       ...(filters.month ? { month: Number(filters.month) } : {}),
       ...(filters.unitId ? { unitId: String(filters.unitId) } : {}),
       ...(filters.costCenterId ? { costCenterId: String(filters.costCenterId) } : {}),
-      ...(filters.vendorId ? { vendorId: String(filters.vendorId) } : {}),
       ...(filters.status ? { status: filters.status as PlanStatus } : {}),
     };
     const [rows, total] = await Promise.all([
@@ -44,6 +63,36 @@ export const planService = {
     return { rows, meta: buildPaginationMeta(page, pageSize, total) };
   },
 
+  /** Every plan row for a month keyed by cost center — powers the grid editor. */
+  async grid(year: number, month: number, unitId?: string) {
+    const costCenters = await prisma.costCenter.findMany({
+      where: { deletedAt: null, status: 'ACTIVE', ...(unitId ? { unitId } : {}) },
+      include: { unit: true },
+      orderBy: [{ unit: { code: 'asc' } }, { costCode: 'asc' }],
+    });
+    const plans = await prisma.manpowerPlan.findMany({
+      where: { year, month, deletedAt: null, ...(unitId ? { unitId } : {}) },
+      include: { approvedBy: { select: { name: true } } },
+    });
+    const planMap = new Map(plans.map((p) => [p.costCenterId, p]));
+    return costCenters.map((cc) => {
+      const plan = planMap.get(cc.id);
+      return {
+        costCenterId: cc.id,
+        unit: cc.unit.code,
+        unitId: cc.unitId,
+        costCode: cc.costCode,
+        costCentre: cc.costCentre,
+        planId: plan?.id ?? null,
+        plannedCount: plan?.plannedCount ?? null,
+        remarks: plan?.remarks ?? null,
+        status: plan?.status ?? null,
+        approvedBy: plan?.approvedBy?.name ?? null,
+        rejectionRemarks: plan?.rejectionRemarks ?? null,
+      };
+    });
+  },
+
   async getById(id: string) {
     const plan = await prisma.manpowerPlan.findFirst({
       where: { id, deletedAt: null },
@@ -53,34 +102,78 @@ export const planService = {
     return plan;
   },
 
-  async create(data: Prisma.ManpowerPlanUncheckedCreateInput) {
-    try {
-      const plan = await prisma.manpowerPlan.create({ data: { ...data, status: PlanStatus.DRAFT }, include });
-      await prisma.planStatusHistory.create({
-        data: { planId: plan.id, toStatus: PlanStatus.DRAFT, actionById: data.createdById, remarks: 'Created' },
-      });
-      return plan;
-    } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-        throw new ConflictError('A plan already exists for this month / unit / cost center / vendor / type');
-      }
-      throw e;
-    }
-  },
+  /**
+   * Bulk upsert from the grid editor or Excel import.
+   * Every touched row goes to PENDING — approval by HR Admin / Super Admin is
+   * always required, including edits to previously approved plans.
+   */
+  async saveGrid(year: number, month: number, rows: GridRow[], actor: { id: string; name: string }) {
+    const results = { saved: 0, unchanged: 0, errors: [] as { row: number; message: string }[] };
+    const ccs = await prisma.costCenter.findMany({ where: { id: { in: rows.map((r) => r.costCenterId) } } });
+    const ccMap = new Map(ccs.map((c) => [c.id, c]));
 
-  async update(id: string, data: Prisma.ManpowerPlanUncheckedUpdateInput) {
-    const existing = await prisma.manpowerPlan.findFirst({ where: { id, deletedAt: null } });
-    if (!existing) throw new NotFoundError('Plan not found');
-    if (existing.status === PlanStatus.APPROVED) {
-      throw new BadRequestError('Approved plans cannot be edited. Create a revision instead.');
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const cc = ccMap.get(row.costCenterId);
+      if (!cc) {
+        results.errors.push({ row: i + 1, message: 'Unknown cost center' });
+        continue;
+      }
+      try {
+        const existing = await prisma.manpowerPlan.findUnique({
+          where: { plan_unique_key: { year, month, costCenterId: row.costCenterId } },
+        });
+        if (existing && existing.deletedAt === null) {
+          if (existing.plannedCount === row.plannedCount && (existing.remarks ?? '') === (row.remarks ?? '')) {
+            results.unchanged++;
+            continue;
+          }
+          const updated = await prisma.manpowerPlan.update({
+            where: { id: existing.id },
+            data: { plannedCount: row.plannedCount, remarks: row.remarks, status: PlanStatus.PENDING, deletedAt: null, approvedById: null, approvedAt: null, rejectionRemarks: null },
+          });
+          await prisma.planStatusHistory.create({
+            data: { planId: updated.id, fromStatus: existing.status, toStatus: PlanStatus.PENDING, actionById: actor.id, remarks: 'Updated — pending approval' },
+          });
+        } else if (existing) {
+          // previously soft-deleted → revive as pending
+          await prisma.manpowerPlan.update({
+            where: { id: existing.id },
+            data: { plannedCount: row.plannedCount, remarks: row.remarks, status: PlanStatus.PENDING, deletedAt: null, createdById: actor.id, approvedById: null, approvedAt: null, rejectionRemarks: null },
+          });
+          await prisma.planStatusHistory.create({
+            data: { planId: existing.id, toStatus: PlanStatus.PENDING, actionById: actor.id, remarks: 'Re-created — pending approval' },
+          });
+        } else {
+          const created = await prisma.manpowerPlan.create({
+            data: {
+              year,
+              month,
+              unitId: cc.unitId,
+              costCenterId: row.costCenterId,
+              plannedCount: row.plannedCount,
+              remarks: row.remarks,
+              status: PlanStatus.PENDING,
+              createdById: actor.id,
+            },
+          });
+          await prisma.planStatusHistory.create({
+            data: { planId: created.id, toStatus: PlanStatus.PENDING, actionById: actor.id, remarks: 'Created — pending approval' },
+          });
+        }
+        results.saved++;
+      } catch (e) {
+        results.errors.push({ row: i + 1, message: (e as Error).message });
+      }
     }
-    return prisma.manpowerPlan.update({ where: { id }, data, include });
+
+    if (results.saved > 0) await notifyApprovers(results.saved, actor.name);
+    return results;
   },
 
   async remove(id: string) {
     const existing = await prisma.manpowerPlan.findFirst({ where: { id, deletedAt: null } });
     if (!existing) throw new NotFoundError('Plan not found');
-    if (existing.status === PlanStatus.APPROVED) throw new BadRequestError('Approved plans cannot be deleted');
     await prisma.manpowerPlan.update({ where: { id }, data: { deletedAt: new Date() } });
   },
 
@@ -90,9 +183,9 @@ export const planService = {
 
     const allowed: Record<PlanStatus, PlanStatus[]> = {
       DRAFT: [PlanStatus.PENDING],
-      PENDING: [PlanStatus.APPROVED, PlanStatus.REJECTED, PlanStatus.DRAFT],
-      APPROVED: [],
-      REJECTED: [PlanStatus.DRAFT, PlanStatus.PENDING],
+      PENDING: [PlanStatus.APPROVED, PlanStatus.REJECTED],
+      APPROVED: [PlanStatus.PENDING],
+      REJECTED: [PlanStatus.PENDING],
     };
     if (!allowed[plan.status].includes(to)) {
       throw new BadRequestError(`Cannot move a ${plan.status} plan to ${to}`);
@@ -110,34 +203,36 @@ export const planService = {
       prisma.manpowerPlan.update({ where: { id }, data, include }),
       prisma.planStatusHistory.create({ data: { planId: id, fromStatus: plan.status, toStatus: to, actionById, remarks } }),
     ]);
+    // keep stored daily variance in sync with the (newly) approved plan
+    if (to === PlanStatus.APPROVED || plan.status === PlanStatus.APPROVED) {
+      await actualService.recomputeMonth(plan.year, plan.month);
+    }
     return updated;
   },
 
-  async bulkCreate(rows: Prisma.ManpowerPlanUncheckedCreateInput[], createdById: string) {
-    const results = { created: 0, skipped: 0, errors: [] as { row: number; message: string }[] };
-    for (let i = 0; i < rows.length; i++) {
-      try {
-        await prisma.manpowerPlan.create({ data: { ...rows[i], createdById, status: PlanStatus.DRAFT } });
-        results.created++;
-      } catch (e) {
-        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-          results.skipped++;
-          results.errors.push({ row: i + 1, message: 'Duplicate plan key — skipped' });
-        } else {
-          results.errors.push({ row: i + 1, message: (e as Error).message });
-        }
-      }
+  /** Approve (or reject) every pending plan of a month in one action. */
+  async transitionMonth(year: number, month: number, to: 'APPROVED' | 'REJECTED', actionById: string, remarks?: string) {
+    if (to === 'REJECTED' && !remarks) throw new BadRequestError('Rejection remarks are required');
+    const pending = await prisma.manpowerPlan.findMany({ where: { year, month, status: 'PENDING', deletedAt: null } });
+    if (pending.length === 0) throw new NotFoundError('No pending plans for this month');
+
+    for (const p of pending) {
+      await prisma.$transaction([
+        prisma.manpowerPlan.update({
+          where: { id: p.id },
+          data:
+            to === 'APPROVED'
+              ? { status: PlanStatus.APPROVED, approvedById: actionById, approvedAt: new Date(), rejectionRemarks: null }
+              : { status: PlanStatus.REJECTED, rejectionRemarks: remarks },
+        }),
+        prisma.planStatusHistory.create({ data: { planId: p.id, fromStatus: PlanStatus.PENDING, toStatus: to as PlanStatus, actionById, remarks } }),
+      ]);
     }
-    return results;
+    if (to === 'APPROVED') await actualService.recomputeMonth(year, month);
+    return { count: pending.length, to };
   },
 
-  async duplicate(
-    fromYear: number,
-    fromMonth: number,
-    toYear: number,
-    toMonth: number,
-    createdById: string,
-  ) {
+  async duplicate(fromYear: number, fromMonth: number, toYear: number, toMonth: number, createdById: string) {
     const source = await prisma.manpowerPlan.findMany({
       where: { year: fromYear, month: fromMonth, deletedAt: null },
     });
@@ -153,17 +248,16 @@ export const planService = {
             month: toMonth,
             unitId: p.unitId,
             costCenterId: p.costCenterId,
-            vendorId: p.vendorId,
-            genderOrType: p.genderOrType,
             plannedCount: p.plannedCount,
             remarks: p.remarks,
-            status: PlanStatus.DRAFT,
+            status: PlanStatus.PENDING,
             createdById,
           },
         });
         created++;
-      } catch {
-        skipped++;
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') skipped++;
+        else throw e;
       }
     }
     return { created, skipped, total: source.length };

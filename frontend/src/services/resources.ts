@@ -1,13 +1,14 @@
 import { api } from './api';
 import type {
+  ActualGridRow,
   AuthUser,
   CostCenter,
   DashboardData,
-  Department,
   LoginResponse,
   ManpowerActual,
   ManpowerPlan,
   PaginationMeta,
+  PlanGridRow,
   ReportResult,
   Unit,
   Vendor,
@@ -46,7 +47,6 @@ function crud<T>(base: string) {
 
 export const vendorApi = crud<Vendor>('/vendors');
 export const unitApi = crud<Unit>('/units');
-export const departmentApi = crud<Department>('/departments');
 export const costCenterApi = crud<CostCenter>('/cost-centers');
 export const userApi = crud<any>('/users');
 export const rolesApi = { list: () => api.get('/roles').then((r) => r.data.data) };
@@ -55,10 +55,16 @@ export const rolesApi = { list: () => api.get('/roles').then((r) => r.data.data)
 export const planApi = {
   ...crud<ManpowerPlan>('/plans'),
   pending: () => list<ManpowerPlan>('/plans/pending'),
-  submit: (id: string) => api.post(`/plans/${id}/submit`).then((r) => r.data.data),
+  grid: (year: number, month: number, unitId?: string) =>
+    api.get('/plans/grid', { params: { year, month, unitId } }).then((r) => r.data.data as PlanGridRow[]),
+  saveGrid: (year: number, month: number, rows: { costCenterId: string; plannedCount: number; remarks?: string | null }[]) =>
+    api.post('/plans/grid', { year, month, rows }).then((r) => r.data.data as { saved: number; unchanged: number; errors: { row: number; message: string }[] }),
   approve: (id: string, remarks?: string) => api.post(`/plans/${id}/approve`, { remarks }).then((r) => r.data.data),
   reject: (id: string, remarks: string) => api.post(`/plans/${id}/reject`, { remarks }).then((r) => r.data.data),
-  bulk: (rows: unknown[]) => api.post('/plans/bulk', { rows }).then((r) => r.data.data),
+  approveMonth: (year: number, month: number, remarks?: string) =>
+    api.post('/plans/approve-month', { year, month, remarks }).then((r) => r.data.data as { count: number }),
+  rejectMonth: (year: number, month: number, remarks: string) =>
+    api.post('/plans/reject-month', { year, month, remarks }).then((r) => r.data.data as { count: number }),
   duplicate: (body: { fromYear: number; fromMonth: number; toYear: number; toMonth: number }) =>
     api.post('/plans/duplicate', body).then((r) => r.data.data),
 };
@@ -66,10 +72,12 @@ export const planApi = {
 // ---- Actuals ----
 export const actualApi = {
   list: (params?: Record<string, unknown>) => list<ManpowerActual>('/actuals', params),
+  grid: (date: string, unitId?: string) =>
+    api.get('/actuals/grid', { params: { date, unitId } }).then((r) => r.data.data as ActualGridRow[]),
   save: (body: Partial<ManpowerActual>) => api.post('/actuals', body).then((r) => r.data.data as ManpowerActual),
   update: (id: string, body: Partial<ManpowerActual>) => api.put(`/actuals/${id}`, body).then((r) => r.data.data),
   remove: (id: string) => api.delete(`/actuals/${id}`).then((r) => r.data),
-  bulk: (rows: unknown[]) => api.post('/actuals/bulk', { rows }).then((r) => r.data.data),
+  bulk: (rows: unknown[]) => api.post('/actuals/bulk', { rows }).then((r) => r.data.data as { saved: number; errors: { row: number; message: string }[] }),
 };
 
 // ---- Dashboard ----

@@ -35,7 +35,6 @@ export const NAV_ITEMS: NavItem[] = [
 
   { label: 'Vendors', to: '/masters/vendors', icon: Building2, roles: ['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT'], section: 'Masters' },
   { label: 'Units', to: '/masters/units', icon: Boxes, roles: ['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT'], section: 'Masters' },
-  { label: 'Departments', to: '/masters/departments', icon: Network, roles: ['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT'], section: 'Masters' },
   { label: 'Cost Centers', to: '/masters/cost-centers', icon: Network, roles: ['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT'], section: 'Masters' },
 
   { label: 'Users', to: '/admin/users', icon: Users, roles: ['SUPER_ADMIN'], section: 'Administration' },

@@ -1,24 +1,22 @@
 import { Select } from './ui';
 import { MONTHS } from '@/lib/utils';
-import { useUnits, useVendors, useCostCenters } from '@/hooks/useMasters';
+import { useUnits, useCostCenters } from '@/hooks/useMasters';
 
 export interface PeriodValue {
   year: number;
   month: number;
   unitId?: string;
   costCenterId?: string;
-  vendorId?: string;
 }
 
 interface Props {
   value: PeriodValue;
   onChange: (v: PeriodValue) => void;
-  show?: { unit?: boolean; costCenter?: boolean; vendor?: boolean };
+  show?: { unit?: boolean; costCenter?: boolean };
 }
 
-export function PeriodFilters({ value, onChange, show = { unit: true, vendor: true } }: Props) {
+export function PeriodFilters({ value, onChange, show = { unit: true } }: Props) {
   const { data: units = [] } = useUnits();
-  const { data: vendors = [] } = useVendors();
   const { data: costCenters = [] } = useCostCenters(value.unitId);
   const years = Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - 3 + i);
 
@@ -47,14 +45,6 @@ export function PeriodFilters({ value, onChange, show = { unit: true, vendor: tr
           <option value="">All Cost Centers</option>
           {costCenters.map((c) => (
             <option key={c.id} value={c.id}>{c.costCode} — {c.costCentre}</option>
-          ))}
-        </Select>
-      )}
-      {show.vendor && (
-        <Select value={value.vendorId ?? ''} onChange={(e) => onChange({ ...value, vendorId: e.target.value || undefined })} className="w-48">
-          <option value="">All Vendors</option>
-          {vendors.map((v) => (
-            <option key={v.id} value={v.id}>{v.vendorName}</option>
           ))}
         </Select>
       )}

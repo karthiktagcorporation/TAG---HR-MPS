@@ -10,8 +10,6 @@ export const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
-export const MANPOWER_TYPES = ['MALE', 'FEMALE', 'SKILLED', 'SEMI_SKILLED', 'UNSKILLED', 'STAFF', 'GENERAL'] as const;
-
 export function formatNumber(n: number | null | undefined) {
   return new Intl.NumberFormat('en-IN').format(n ?? 0);
 }

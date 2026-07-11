@@ -42,3 +42,7 @@ backend/storage/
 
 # Docker
 *.local.yml
+
+# Local tooling
+.claude/
+.devlogs/

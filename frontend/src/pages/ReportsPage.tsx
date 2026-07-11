@@ -22,7 +22,7 @@ export default function ReportsPage() {
   const { data: defs = [] } = useQuery({ queryKey: ['report-defs'], queryFn: () => reportApi.definitions() });
 
   const params = useMemo(
-    () => ({ year: period.year, month: period.month, unitId: period.unitId, costCenterId: period.costCenterId, vendorId: period.vendorId, search: search || undefined }),
+    () => ({ year: period.year, month: period.month, unitId: period.unitId, costCenterId: period.costCenterId, search: search || undefined }),
     [period, search],
   );
 
@@ -78,7 +78,7 @@ export default function ReportsPage() {
         <Select value={type} onChange={(e) => setType(e.target.value)} className="w-56">
           {defs.map((d) => <option key={d.type} value={d.type}>{d.title}</option>)}
         </Select>
-        <PeriodFilters value={period} onChange={setPeriod} show={{ unit: true, costCenter: true, vendor: true }} />
+        <PeriodFilters value={period} onChange={setPeriod} show={{ unit: true, costCenter: true }} />
       </FilterBar>
 
       <Card>

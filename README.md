@@ -42,7 +42,7 @@ against the relevant **approved** monthly plan, and surfaces everything through 
 - **Authentication** — username **or** email login, JWT access token + rotating refresh token, bcrypt hashing, rate-limited auth endpoints.
 - **RBAC** — four roles, permission-aware menus and route guards, **cost-center-scoped** access for the User Master role (enforced in both backend and frontend).
 - **Dashboard** — animated KPI cards + 9 chart families (Plan vs Actual, unit/cost-center analysis, vendor performance, gender/type split, monthly & daily trends, shortage heatmap, vendor allocation), all from live DB aggregates with month/year/unit/cost-center/vendor filters.
-- **Masters** — Vendors, Units, Departments, Cost Centers — all DB-backed CRUD with soft delete and active/inactive status. No master data is hard-coded in the UI.
+- **Masters** — Vendors, Units, Cost Centers — all DB-backed CRUD with soft delete and active/inactive status. No master data is hard-coded in the UI.
 - **Manpower Plan** — create/edit/submit, approve/reject with remarks, status history, duplicate-from-previous-month, bulk create API, unique-key conflict protection.
 - **Daily Actual** — auto-variance, upsert by unique key, cost-center-restricted entry for User Master.
 - **Variance Analysis** — focused plan-vs-actual shortage/excess view.
@@ -101,7 +101,7 @@ tag-mps/
 │       ├── middleware/(auth, rbac, validate, error, rateLimit, asyncHandler)
 │       ├── utils/     (jwt, password, audit, logger, errors, apiResponse, variance)
 │       ├── routes/index.ts
-│       └── modules/   (auth, users, roles, vendors, units, departments,
+│       └── modules/   (auth, users, roles, vendors, units,
 │                       costCenters, plans, actuals, dashboard, reports,
 │                       notifications, auditLogs, settings)
 └── frontend/
@@ -121,20 +121,20 @@ tag-mps/
 
 ## Database Design
 
-Normalized PostgreSQL schema (see [`backend/prisma/schema.prisma`](backend/prisma/schema.prisma)). Key tables: `roles`, `users`, `user_cost_centers`, `refresh_tokens`, `vendors`, `units`, `departments`, `cost_centers`, `manpower_plans`, `plan_status_history`, `manpower_actuals`, `notifications`, `audit_logs`, `settings`.
+Normalized PostgreSQL schema (see [`backend/prisma/schema.prisma`](backend/prisma/schema.prisma)). Key tables: `roles`, `users`, `user_cost_centers`, `refresh_tokens`, `vendors`, `units`, `cost_centers`, `manpower_plans`, `plan_status_history`, `manpower_actuals`, `notifications`, `audit_logs`, `settings`.
 
 **Relationship model (the important design decision):**
 
 - **Unit (Div) 1—* CostCenter** — every cost center belongs to one unit.
-- **Department 1—* CostCenter** — departments are a **functional grouping** used for the Department Report. The source data only provides a *Div* (unit) column, so a practical Department master (`Production`, `Fabrication`, `Quality`, `Maintenance`, `Tool Room`, `Galvanising`, `Testing`, `HR & Admin`, `Stores`, `Projects`) is seeded and each cost center is mapped to one — fully editable in the UI.
 - A cost code such as **HFRGN** / **HRBMD** legitimately exists under multiple units, so `CostCenter` is **uniquely keyed on `(unitId, costCode)`**, not on `costCode` alone.
+- **Plans and actuals are cost-center-wise**: one plan row per `(year, month, costCenter)`, one actual row per `(date, costCenter)`. Shortage/excess is computed automatically against the approved monthly plan.
 
 **Business unique constraints (prevent conflicting duplicates):**
 
-- Plan: `@@unique(year, month, unitId, costCenterId, vendorId, genderOrType)`
-- Actual: `@@unique(date, unitId, costCenterId, vendorId, type)`
+- Plan: `@@unique(year, month, costCenterId)`
+- Actual: `@@unique(date, costCenterId)`
 
-Soft delete (`deletedAt`) is used on masters, plans and actuals; reporting indexes exist on date, unit, cost center, vendor and status columns.
+Soft delete (`deletedAt`) is used on masters, plans and actuals; reporting indexes exist on date, unit, cost center and status columns.
 
 ## Roles & Access
 
@@ -194,7 +194,7 @@ npm run dev
 npm run prisma:generate         # regenerate Prisma client
 npm run prisma:migrate          # create/apply a dev migration (local DB required)
 npm run prisma:deploy           # apply committed migrations (production / CI)
-npm run seed                    # roles, super admin, vendors, units, departments,
+npm run seed                    # roles, super admin, vendors, units,
                                 # cost centers, settings (+ sample data if enabled)
 ```
 
@@ -292,10 +292,9 @@ No passwords are hard-coded. The seed reads `SUPER_ADMIN_USERNAME` / `SUPER_ADMI
 
 ## Assumptions
 
-- **Departments** are modelled as an editable functional grouping over cost centers (the source mapping only had a *Div*/unit column). This keeps the Department Report real and future-safe.
-- **`genderOrType` / `type`** are modelled with a shared `ManpowerType` enum (`MALE, FEMALE, SKILLED, SEMI_SKILLED, UNSKILLED, STAFF, GENERAL`) so the Gender Distribution chart and variance matching share one dimension. The **Shift-wise Report** uses this type dimension as the practical shift equivalent (no separate shift master was provided).
+- **Plans and actuals are cost-center-wise** (no vendor / gender-type dimension on entries). Vendors remain a reference master. Every plan save (grid edit or Excel import) goes to **PENDING** and requires approval by HR Admin or Super Admin.
 - Each user holds **one role** (the `user_roles` requirement is satisfied by a normalized `Role` table + FK); cost-center scoping is the per-user multi-assignment via `user_cost_centers`.
-- Bulk import is provided as validated backend endpoints (`POST /api/plans/bulk`, `POST /api/actuals/bulk`) with row-level error reporting; the Excel template column order mirrors the create payloads documented above.
+- Bulk import is provided both as Excel import in the UI (Plans and Daily Actual pages, with downloadable templates) and as validated backend endpoints (`POST /api/plans/grid`, `POST /api/actuals/bulk`) with row-level error reporting.
 - Attendance % on the dashboard compares the latest day's total actual against the month's approved planned total.
 
 ---

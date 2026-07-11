@@ -3,7 +3,6 @@ import {
   PrismaClient,
   RoleCode,
   MasterStatus,
-  ManpowerType,
   PlanStatus,
   NotificationType,
   NotificationSeverity,
@@ -15,14 +14,15 @@ dotenv.config();
 
 const prisma = new PrismaClient();
 
-const SEED_SAMPLE_DATA = (process.env.SEED_SAMPLE_DATA ?? 'true').toLowerCase() === 'true';
+// Demo plans/actuals are only created when SEED_SAMPLE_DATA=true is set explicitly.
+const SEED_SAMPLE_DATA = (process.env.SEED_SAMPLE_DATA ?? 'false').toLowerCase() === 'true';
 
 // ---------- master data ----------
 
 const ROLES: { code: RoleCode; name: string; description: string }[] = [
   { code: 'SUPER_ADMIN', name: 'Super Admin', description: 'Full access to every module and setting.' },
-  { code: 'HR_ADMIN', name: 'HR Admin', description: 'Manage manpower plans and daily actuals, view reports.' },
-  { code: 'MANAGEMENT', name: 'Management / Viewer', description: 'Read-only dashboards & reports, can approve plans.' },
+  { code: 'HR_ADMIN', name: 'HR Admin', description: 'Manage manpower plans and daily actuals, approve plans, view reports.' },
+  { code: 'MANAGEMENT', name: 'Management / Viewer', description: 'Read-only dashboards & reports.' },
   { code: 'USER_MASTER', name: 'User Master', description: 'Update daily actuals for assigned cost centers only.' },
 ];
 
@@ -55,46 +55,33 @@ const UNITS = [
   { code: 'SV', name: 'Service / SV' },
 ];
 
-const DEPARTMENTS = [
-  { code: 'PROD', name: 'Production' },
-  { code: 'FAB', name: 'Fabrication' },
-  { code: 'QLTY', name: 'Quality' },
-  { code: 'MAINT', name: 'Maintenance' },
-  { code: 'TOOL', name: 'Tool Room' },
-  { code: 'GALV', name: 'Galvanising' },
-  { code: 'TEST', name: 'Testing' },
-  { code: 'HRADM', name: 'HR & Admin' },
-  { code: 'STORE', name: 'Stores' },
-  { code: 'PROJ', name: 'Projects' },
-];
-
-// div(unit) | costCode | costCentre | department
-const COST_CENTERS: { unit: string; code: string; name: string; dept: string }[] = [
-  { unit: 'SV', code: 'HFRGN', name: 'FORGING SHOP', dept: 'PROD' },
-  { unit: 'U1', code: 'ASSMB', name: 'ASSEMBLY SHOP', dept: 'PROD' },
-  { unit: 'U1', code: 'HCTST', name: 'CONDUCTOR TESTING', dept: 'TEST' },
-  { unit: 'U1', code: 'HHTST', name: 'HARDWARE TESTING', dept: 'TEST' },
-  { unit: 'U1', code: 'HRBMD', name: 'RUBBER MOULDING', dept: 'PROD' },
-  { unit: 'U2', code: 'RBATCH', name: 'RBATCH', dept: 'PROD' },
-  { unit: 'U2', code: 'ALFAB', name: 'ALUMINIUM FABRICATION', dept: 'FAB' },
-  { unit: 'U2', code: 'FRGSF', name: 'STEEL FABRICATION', dept: 'FAB' },
-  { unit: 'U2', code: 'HFRGN', name: 'FORGING SHOP', dept: 'PROD' },
-  { unit: 'U2', code: 'HMCSH', name: 'MACHINE SHOP', dept: 'PROD' },
-  { unit: 'U2', code: 'HRBMD', name: 'RUBBER MOULDING', dept: 'PROD' },
-  { unit: 'U2', code: 'HRODC', name: 'ROD CUTTING SHOP', dept: 'PROD' },
-  { unit: 'U2', code: 'MAINT', name: 'MAINTENANCE', dept: 'MAINT' },
-  { unit: 'U2', code: 'NRHTT', name: 'NORMALISING & SHOT BLASTING', dept: 'PROD' },
-  { unit: 'U2', code: 'PLCUT', name: 'PLASMA CUTTING', dept: 'FAB' },
-  { unit: 'U2', code: 'QUALI', name: 'QUALITY', dept: 'QLTY' },
-  { unit: 'U2', code: 'STWLG', name: 'STEEL WELDING', dept: 'FAB' },
-  { unit: 'U2', code: 'TTLRM', name: 'TOOL ROOM', dept: 'TOOL' },
-  { unit: 'U3', code: 'HGLVG', name: 'GALVANISING', dept: 'GALV' },
-  { unit: 'U4', code: 'HRADM', name: 'HR & ADMIN', dept: 'HRADM' },
-  { unit: 'U4', code: 'HAMRD', name: 'ARMOUR ROD', dept: 'PROJ' },
-  { unit: 'U4', code: 'HGCSH', name: 'GAS/PLATE CUTTING SHOP', dept: 'FAB' },
-  { unit: 'U4', code: 'HVTDP', name: 'VIBRATION DAMPER', dept: 'PROJ' },
-  { unit: 'U4', code: 'INSUL', name: 'INSULATOR PROJECT', dept: 'PROJ' },
-  { unit: 'U4', code: 'STORE', name: 'STORE', dept: 'STORE' },
+// div(unit) | costCode | costCentre
+const COST_CENTERS: { unit: string; code: string; name: string }[] = [
+  { unit: 'SV', code: 'HFRGN', name: 'FORGING SHOP' },
+  { unit: 'U1', code: 'ASSMB', name: 'ASSEMBLY SHOP' },
+  { unit: 'U1', code: 'HCTST', name: 'CONDUCTOR TESTING' },
+  { unit: 'U1', code: 'HHTST', name: 'HARDWARE TESTING' },
+  { unit: 'U1', code: 'HRBMD', name: 'RUBBER MOULDING' },
+  { unit: 'U2', code: 'RBATCH', name: 'RBATCH' },
+  { unit: 'U2', code: 'ALFAB', name: 'ALUMINIUM FABRICATION' },
+  { unit: 'U2', code: 'FRGSF', name: 'STEEL FABRICATION' },
+  { unit: 'U2', code: 'HFRGN', name: 'FORGING SHOP' },
+  { unit: 'U2', code: 'HMCSH', name: 'MACHINE SHOP' },
+  { unit: 'U2', code: 'HRBMD', name: 'RUBBER MOULDING' },
+  { unit: 'U2', code: 'HRODC', name: 'ROD CUTTING SHOP' },
+  { unit: 'U2', code: 'MAINT', name: 'MAINTENANCE' },
+  { unit: 'U2', code: 'NRHTT', name: 'NORMALISING & SHOT BLASTING' },
+  { unit: 'U2', code: 'PLCUT', name: 'PLASMA CUTTING' },
+  { unit: 'U2', code: 'QUALI', name: 'QUALITY' },
+  { unit: 'U2', code: 'STWLG', name: 'STEEL WELDING' },
+  { unit: 'U2', code: 'TTLRM', name: 'TOOL ROOM' },
+  { unit: 'U3', code: 'HGLVG', name: 'GALVANISING' },
+  { unit: 'U4', code: 'HRADM', name: 'HR & ADMIN' },
+  { unit: 'U4', code: 'HAMRD', name: 'ARMOUR ROD' },
+  { unit: 'U4', code: 'HGCSH', name: 'GAS/PLATE CUTTING SHOP' },
+  { unit: 'U4', code: 'HVTDP', name: 'VIBRATION DAMPER' },
+  { unit: 'U4', code: 'INSUL', name: 'INSULATOR PROJECT' },
+  { unit: 'U4', code: 'STORE', name: 'STORE' },
 ];
 
 const DEFAULT_SETTINGS: { key: string; value: unknown }[] = [
@@ -192,34 +179,19 @@ async function main() {
   }
   console.log(`✅ Units seeded (${UNITS.length})`);
 
-  // ---- Departments ----
-  for (const d of DEPARTMENTS) {
-    await prisma.department.upsert({
-      where: { code: d.code },
-      update: { name: d.name },
-      create: { code: d.code, name: d.name, status: MasterStatus.ACTIVE },
-    });
-  }
-  console.log(`✅ Departments seeded (${DEPARTMENTS.length})`);
-
   // ---- Cost Centers ----
   const unitMap = new Map((await prisma.unit.findMany()).map((u) => [u.code, u.id]));
-  const deptMap = new Map((await prisma.department.findMany()).map((d) => [d.code, d.id]));
 
   for (const c of COST_CENTERS) {
     const unitId = unitMap.get(c.unit)!;
-    const departmentId = deptMap.get(c.dept) ?? null;
     const existing = await prisma.costCenter.findUnique({
       where: { unitId_costCode: { unitId, costCode: c.code } },
     });
     if (existing) {
-      await prisma.costCenter.update({
-        where: { id: existing.id },
-        data: { costCentre: c.name, departmentId },
-      });
+      await prisma.costCenter.update({ where: { id: existing.id }, data: { costCentre: c.name } });
     } else {
       await prisma.costCenter.create({
-        data: { costCode: c.code, costCentre: c.name, unitId, departmentId, status: MasterStatus.ACTIVE },
+        data: { costCode: c.code, costCentre: c.name, unitId, status: MasterStatus.ACTIVE },
       });
     }
   }
@@ -248,66 +220,44 @@ async function main() {
 async function seedSampleData() {
   const admin = await prisma.user.findFirstOrThrow({ where: { username: process.env.SUPER_ADMIN_USERNAME ?? 'superadmin' } });
   const costCenters = await prisma.costCenter.findMany({ include: { unit: true } });
-  const vendors = await prisma.vendor.findMany({ where: { status: 'ACTIVE' } });
 
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
-  const types: ManpowerType[] = [ManpowerType.MALE, ManpowerType.FEMALE];
 
-  // Create approved plans for a subset (first 12 cost centers) for the current month.
-  const planned: { costCenterId: string; unitId: string; vendorId: string; type: ManpowerType; count: number }[] = [];
-  let vIdx = 0;
-  for (const cc of costCenters.slice(0, 12)) {
-    const vendor = vendors[vIdx % vendors.length];
-    vIdx++;
-    for (const type of types) {
-      const count = type === ManpowerType.MALE ? 20 + ((vIdx * 3) % 25) : 5 + ((vIdx * 2) % 10);
-      const plan = await prisma.manpowerPlan.upsert({
-        where: {
-          plan_unique_key: {
-            year,
-            month,
-            unitId: cc.unitId,
-            costCenterId: cc.id,
-            vendorId: vendor.id,
-            genderOrType: type,
-          },
-        },
-        update: { plannedCount: count, status: PlanStatus.APPROVED, approvedById: admin.id, approvedAt: new Date() },
-        create: {
-          year,
-          month,
-          unitId: cc.unitId,
-          costCenterId: cc.id,
-          vendorId: vendor.id,
-          genderOrType: type,
-          plannedCount: count,
-          status: PlanStatus.APPROVED,
-          createdById: admin.id,
-          approvedById: admin.id,
-          approvedAt: new Date(),
-        },
-      });
-      await prisma.planStatusHistory.create({
-        data: { planId: plan.id, fromStatus: PlanStatus.PENDING, toStatus: PlanStatus.APPROVED, actionById: admin.id, remarks: 'Auto-approved (seed)' },
-      });
-      planned.push({ costCenterId: cc.id, unitId: cc.unitId, vendorId: vendor.id, type, count });
-    }
+  // Approved monthly plan (one row per cost center) for the current month.
+  const planned: { costCenterId: string; unitId: string; count: number }[] = [];
+  let i = 0;
+  for (const cc of costCenters.slice(0, 20)) {
+    i++;
+    const count = 15 + ((i * 7) % 40);
+    const plan = await prisma.manpowerPlan.upsert({
+      where: { plan_unique_key: { year, month, costCenterId: cc.id } },
+      update: { plannedCount: count, status: PlanStatus.APPROVED, approvedById: admin.id, approvedAt: new Date() },
+      create: {
+        year,
+        month,
+        unitId: cc.unitId,
+        costCenterId: cc.id,
+        plannedCount: count,
+        status: PlanStatus.APPROVED,
+        createdById: admin.id,
+        approvedById: admin.id,
+        approvedAt: new Date(),
+      },
+    });
+    await prisma.planStatusHistory.create({
+      data: { planId: plan.id, fromStatus: PlanStatus.PENDING, toStatus: PlanStatus.APPROVED, actionById: admin.id, remarks: 'Auto-approved (seed)' },
+    });
+    planned.push({ costCenterId: cc.id, unitId: cc.unitId, count });
   }
 
-  // A couple of pending plans to populate the approval queue.
-  for (const cc of costCenters.slice(12, 15)) {
-    const vendor = vendors[(vIdx++) % vendors.length];
+  // A few pending plans to populate the approval queue.
+  for (const cc of costCenters.slice(20, 23)) {
     await prisma.manpowerPlan.upsert({
-      where: {
-        plan_unique_key: { year, month, unitId: cc.unitId, costCenterId: cc.id, vendorId: vendor.id, genderOrType: ManpowerType.MALE },
-      },
+      where: { plan_unique_key: { year, month, costCenterId: cc.id } },
       update: { status: PlanStatus.PENDING },
-      create: {
-        year, month, unitId: cc.unitId, costCenterId: cc.id, vendorId: vendor.id,
-        genderOrType: ManpowerType.MALE, plannedCount: 18, status: PlanStatus.PENDING, createdById: admin.id,
-      },
+      create: { year, month, unitId: cc.unitId, costCenterId: cc.id, plannedCount: 18, status: PlanStatus.PENDING, createdById: admin.id },
     });
   }
 
@@ -315,20 +265,14 @@ async function seedSampleData() {
   for (let d = 9; d >= 0; d--) {
     const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() - d));
     for (const p of planned) {
-      // vary actual around plan
       const swing = ((d + p.count) % 7) - 3; // -3..+3
       const actualCount = Math.max(0, p.count + swing);
       const shortage = Math.max(p.count - actualCount, 0);
       const excess = Math.max(actualCount - p.count, 0);
       await prisma.manpowerActual.upsert({
-        where: {
-          actual_unique_key: { date, unitId: p.unitId, costCenterId: p.costCenterId, vendorId: p.vendorId, type: p.type },
-        },
+        where: { actual_unique_key: { date, costCenterId: p.costCenterId } },
         update: { actualCount, shortage, excess },
-        create: {
-          date, unitId: p.unitId, costCenterId: p.costCenterId, vendorId: p.vendorId, type: p.type,
-          actualCount, shortage, excess, createdById: admin.id,
-        },
+        create: { date, unitId: p.unitId, costCenterId: p.costCenterId, actualCount, shortage, excess, createdById: admin.id },
       });
     }
   }
@@ -337,8 +281,8 @@ async function seedSampleData() {
   // Notifications
   await prisma.notification.createMany({
     data: [
-      { title: 'Critical shortage detected', message: 'Forging Shop (SV) reported a critical shortage today.', type: NotificationType.CRITICAL_SHORTAGE, severity: NotificationSeverity.CRITICAL, roleCode: 'MANAGEMENT' },
-      { title: 'Plans pending approval', message: '3 manpower plans are awaiting your approval.', type: NotificationType.PENDING_APPROVAL, severity: NotificationSeverity.WARNING, roleCode: 'MANAGEMENT' },
+      { title: 'Critical shortage detected', message: 'Forging Shop (SV) reported a critical shortage today.', type: NotificationType.CRITICAL_SHORTAGE, severity: NotificationSeverity.CRITICAL, roleCode: 'HR_ADMIN' },
+      { title: 'Plans pending approval', message: '3 manpower plans are awaiting your approval.', type: NotificationType.PENDING_APPROVAL, severity: NotificationSeverity.WARNING, roleCode: 'HR_ADMIN' },
       { title: 'Welcome to TAG - MPS', message: 'Your manpower monitoring workspace is ready.', type: NotificationType.SYSTEM, severity: NotificationSeverity.INFO, userId: admin.id },
     ],
   });

@@ -1,7 +1,6 @@
 export type RoleCode = 'SUPER_ADMIN' | 'HR_ADMIN' | 'MANAGEMENT' | 'USER_MASTER';
 export type MasterStatus = 'ACTIVE' | 'INACTIVE';
 export type PlanStatus = 'DRAFT' | 'PENDING' | 'APPROVED' | 'REJECTED';
-export type ManpowerType = 'MALE' | 'FEMALE' | 'SKILLED' | 'SEMI_SKILLED' | 'UNSKILLED' | 'STAFF' | 'GENERAL';
 
 export interface AuthUser {
   id: string;
@@ -42,22 +41,13 @@ export interface Unit {
   status: MasterStatus;
 }
 
-export interface Department {
-  id: string;
-  code: string;
-  name: string;
-  status: MasterStatus;
-}
-
 export interface CostCenter {
   id: string;
   costCode: string;
   costCentre: string;
   unitId: string;
-  departmentId?: string | null;
   status: MasterStatus;
   unit?: Unit;
-  department?: Department | null;
 }
 
 export interface ManpowerPlan {
@@ -66,8 +56,6 @@ export interface ManpowerPlan {
   month: number;
   unitId: string;
   costCenterId: string;
-  vendorId: string;
-  genderOrType: ManpowerType;
   plannedCount: number;
   remarks?: string | null;
   status: PlanStatus;
@@ -75,9 +63,23 @@ export interface ManpowerPlan {
   rejectionRemarks?: string | null;
   unit?: Unit;
   costCenter?: CostCenter;
-  vendor?: Vendor;
   createdBy?: { id: string; name: string };
   approvedBy?: { id: string; name: string } | null;
+}
+
+/** One row of the plan grid editor: a cost center + its plan for the month (if any). */
+export interface PlanGridRow {
+  costCenterId: string;
+  unit: string;
+  unitId: string;
+  costCode: string;
+  costCentre: string;
+  planId: string | null;
+  plannedCount: number | null;
+  remarks: string | null;
+  status: PlanStatus | null;
+  approvedBy: string | null;
+  rejectionRemarks: string | null;
 }
 
 export interface ManpowerActual {
@@ -85,15 +87,27 @@ export interface ManpowerActual {
   date: string;
   unitId: string;
   costCenterId: string;
-  vendorId: string;
-  type: ManpowerType;
   actualCount: number;
   shortage: number;
   excess: number;
   remarks?: string | null;
   unit?: Unit;
   costCenter?: CostCenter;
-  vendor?: Vendor;
+}
+
+/** One row of the daily actual grid: a cost center + plan + entry for the date (if any). */
+export interface ActualGridRow {
+  costCenterId: string;
+  unit: string;
+  unitId: string;
+  costCode: string;
+  costCentre: string;
+  planned: number;
+  actualId: string | null;
+  actualCount: number | null;
+  shortage: number | null;
+  excess: number | null;
+  remarks: string | null;
 }
 
 export interface DashboardData {
@@ -110,12 +124,9 @@ export interface DashboardData {
   charts: {
     planVsActual: { label: string; name: string; planned: number; actual: number }[];
     costCenterAnalysis: { label: string; name: string; actual: number; shortage: number; excess: number }[];
-    vendorPerformance: { label: string; planned: number; actual: number; shortage: number; fulfillment: number }[];
-    genderDistribution: { label: string; value: number }[];
+    planVsActualByCostCenter: { label: string; name: string; planned: number; actual: number }[];
     monthlyTrend: { label: string; planned: number }[];
     dailyAttendanceTrend: { date: string; actual: number; shortage: number; excess: number }[];
-    shortageHeatmap: { unit: string; type: string; shortage: number }[];
-    vendorAllocation: { label: string; value: number }[];
   };
 }
 

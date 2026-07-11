@@ -1,154 +1,247 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
-import { Plus, Trash2 } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import { Download, Save, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader } from '@/components/PageHeader';
 import { FilterBar } from '@/components/FilterBar';
-import { DataTable, Column } from '@/components/DataTable';
-import { ExportActions } from '@/components/ExportActions';
-import { Badge, Button, Card, Input, Label, Modal, Select, Textarea } from '@/components/ui';
-import { MANPOWER_TYPES } from '@/lib/utils';
+import { Badge, Button, Card, Input, Select } from '@/components/ui';
+import { LoadingState } from '@/components/States';
 import { apiErrorMessage } from '@/services/api';
 import { actualApi } from '@/services/resources';
 import { useAuth } from '@/context/AuthContext';
-import { useUnits, useVendors, useCostCenters } from '@/hooks/useMasters';
-import type { ManpowerActual } from '@/types';
+import { useUnits } from '@/hooks/useMasters';
+import type { ActualGridRow } from '@/types';
+
+interface Edit {
+  actualCount: number | null;
+  remarks: string;
+}
 
 export default function ActualsPage() {
   const { hasRole } = useAuth();
   const qc = useQueryClient();
   const [date, setDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [unitId, setUnitId] = useState('');
-  const [page, setPage] = useState(1);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [edits, setEdits] = useState<Record<string, Edit>>({});
+  const fileRef = useRef<HTMLInputElement>(null);
   const { data: units = [] } = useUnits();
 
   const canEnter = hasRole('SUPER_ADMIN', 'HR_ADMIN', 'USER_MASTER');
-  const canDelete = hasRole('SUPER_ADMIN', 'HR_ADMIN');
 
-  const params = useMemo(
-    () => ({ dateFrom: date, dateTo: date, unitId: unitId || undefined, page, pageSize: 15 }),
-    [date, unitId, page],
+  const { data: rows = [], isLoading } = useQuery({
+    queryKey: ['actual-grid', date, unitId],
+    queryFn: () => actualApi.grid(date, unitId || undefined),
+  });
+
+  const invalidate = () => qc.invalidateQueries({ queryKey: ['actual-grid'] });
+
+  const editedRows = useMemo(
+    () =>
+      Object.entries(edits)
+        .filter(([, e]) => e.actualCount !== null && !Number.isNaN(e.actualCount))
+        .map(([costCenterId, e]) => ({ date, costCenterId, actualCount: e.actualCount as number, remarks: e.remarks || null })),
+    [edits, date],
   );
 
-  const { data, isLoading } = useQuery({ queryKey: ['actuals', params], queryFn: () => actualApi.list(params) });
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['actuals'] });
-
-  const delMut = useMutation({
-    mutationFn: (id: string) => actualApi.remove(id),
-    onSuccess: () => { toast.success('Deleted'); invalidate(); },
+  const saveMut = useMutation({
+    mutationFn: () => actualApi.bulk(editedRows),
+    onSuccess: (r) => {
+      toast.success(`Saved ${r.saved} entr${r.saved === 1 ? 'y' : 'ies'} — variance auto-calculated`);
+      if (r.errors.length) toast.error(`${r.errors.length} row(s) failed: ${r.errors[0].message}`);
+      setEdits({});
+      invalidate();
+    },
     onError: (e) => toast.error(apiErrorMessage(e)),
   });
 
-  const columns: Column<ManpowerActual>[] = [
-    { key: 'unit', header: 'Unit', render: (r) => r.unit?.code ?? '—' },
-    { key: 'cc', header: 'Cost Centre', render: (r) => r.costCenter?.costCentre ?? '—' },
-    { key: 'vendor', header: 'Vendor', render: (r) => r.vendor?.vendorName ?? '—' },
-    { key: 'type', header: 'Type' },
-    { key: 'actualCount', header: 'Actual', align: 'right' },
-    {
-      key: 'shortage', header: 'Shortage', align: 'right',
-      render: (r) => (r.shortage > 0 ? <Badge className="bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">{r.shortage}</Badge> : '—'),
-    },
-    {
-      key: 'excess', header: 'Excess', align: 'right',
-      render: (r) => (r.excess > 0 ? <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">{r.excess}</Badge> : '—'),
-    },
-    { key: 'remarks', header: 'Remarks' },
-    ...(canDelete
-      ? [{
-          key: '_actions', header: '', align: 'right' as const,
-          render: (r: ManpowerActual) => (
-            <Button variant="ghost" size="icon" className="text-red-600" onClick={() => { if (confirm('Delete?')) delMut.mutate(r.id); }}><Trash2 className="h-4 w-4" /></Button>
-          ),
-        }]
-      : []),
-  ];
+  const setEdit = (row: ActualGridRow, patch: Partial<Edit>) =>
+    setEdits((prev) => ({
+      ...prev,
+      [row.costCenterId]: {
+        actualCount: prev[row.costCenterId]?.actualCount ?? row.actualCount,
+        remarks: prev[row.costCenterId]?.remarks ?? (row.remarks ?? ''),
+        ...patch,
+      },
+    }));
 
-  const exportRows = (data?.data ?? []).map((r) => ({
-    unit: r.unit?.code, costCentre: r.costCenter?.costCentre, vendor: r.vendor?.vendorName,
-    type: r.type, actual: r.actualCount, shortage: r.shortage, excess: r.excess, remarks: r.remarks ?? '',
-  }));
+  const valueFor = (row: ActualGridRow) => edits[row.costCenterId]?.actualCount ?? row.actualCount;
+  const remarksFor = (row: ActualGridRow) => edits[row.costCenterId]?.remarks ?? (row.remarks ?? '');
+  const isDirty = (row: ActualGridRow) =>
+    edits[row.costCenterId] !== undefined &&
+    (edits[row.costCenterId].actualCount !== row.actualCount || edits[row.costCenterId].remarks !== (row.remarks ?? ''));
+
+  // live variance preview for edited rows
+  const previewVariance = (row: ActualGridRow) => {
+    const v = valueFor(row);
+    if (v === null) return { shortage: row.shortage, excess: row.excess };
+    return { shortage: Math.max(row.planned - v, 0), excess: Math.max(v - row.planned, 0) };
+  };
+
+  const totals = useMemo(() => {
+    let planned = 0; let actual = 0; let shortage = 0; let excess = 0;
+    for (const r of rows) {
+      planned += r.planned;
+      const v = valueFor(r);
+      if (v !== null) {
+        actual += v;
+        shortage += Math.max(r.planned - v, 0);
+        excess += Math.max(v - r.planned, 0);
+      }
+    }
+    return { planned, actual, shortage, excess };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, edits]);
+
+  // ---- Excel import / template ----
+  const downloadTemplate = () => {
+    const data = rows.map((r) => ({
+      Date: date,
+      Unit: r.unit,
+      'Cost Code': r.costCode,
+      'Cost Centre': r.costCentre,
+      Planned: r.planned,
+      Actual: r.actualCount ?? '',
+      Remarks: r.remarks ?? '',
+    }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    ws['!cols'] = [{ wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 32 }, { wch: 10 }, { wch: 10 }, { wch: 30 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Actual');
+    XLSX.writeFile(wb, `daily-actual-${date}.xlsx`);
+  };
+
+  const importFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const wb = XLSX.read(reader.result, { type: 'array' });
+        const sheet = wb.Sheets[wb.SheetNames[0]];
+        const parsed = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
+        const byKey = new Map(rows.map((r) => [`${r.unit}|${r.costCode}`.toUpperCase(), r]));
+        let matched = 0;
+        let skipped = 0;
+        const next: Record<string, Edit> = { ...edits };
+        for (const p of parsed) {
+          const unit = String(p.Unit ?? p.unit ?? '').trim().toUpperCase();
+          const code = String(p['Cost Code'] ?? p.CostCode ?? p.costCode ?? '').trim().toUpperCase();
+          const actual = Number(p.Actual ?? p.actual ?? p['Actual Count']);
+          const row = byKey.get(`${unit}|${code}`);
+          if (!row || Number.isNaN(actual) || actual < 0) { skipped++; continue; }
+          next[row.costCenterId] = { actualCount: Math.round(actual), remarks: String(p.Remarks ?? p.remarks ?? '') };
+          matched++;
+        }
+        setEdits(next);
+        toast.success(`Imported ${matched} row(s)${skipped ? `, ${skipped} skipped` : ''}. Review and click Save.`);
+      } catch {
+        toast.error('Could not read the Excel file');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
 
   return (
     <div>
       <PageHeader
         title="Daily Actual Entry"
-        subtitle="Record daily actual manpower — variance is auto-calculated against the approved plan"
+        subtitle="Enter the day's actual manpower per cost center — shortage / excess is auto-calculated against the approved plan"
         breadcrumbs={['Operations', 'Daily Actual']}
         actions={
           <div className="flex flex-wrap gap-2">
-            <ExportActions filename={`daily-actual-${date}`} title={`Daily Actual ${date}`} columns={[
-              { key: 'unit', label: 'Unit' }, { key: 'costCentre', label: 'Cost Centre' }, { key: 'vendor', label: 'Vendor' },
-              { key: 'type', label: 'Type' }, { key: 'actual', label: 'Actual' }, { key: 'shortage', label: 'Shortage' },
-              { key: 'excess', label: 'Excess' }, { key: 'remarks', label: 'Remarks' },
-            ]} rows={exportRows} disabled={!exportRows.length} filterSummary={`Date: ${date}`} />
-            {canEnter && <Button onClick={() => setCreateOpen(true)}><Plus className="h-4 w-4" /> Add Entry</Button>}
+            <Button variant="outline" onClick={downloadTemplate} disabled={!rows.length}><Download className="h-4 w-4" /> Template</Button>
+            {canEnter && (
+              <>
+                <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = ''; }} />
+                <Button variant="outline" onClick={() => fileRef.current?.click()}><Upload className="h-4 w-4" /> Import Excel</Button>
+                <Button onClick={() => saveMut.mutate()} disabled={!editedRows.length || saveMut.isPending}>
+                  <Save className="h-4 w-4" /> {saveMut.isPending ? 'Saving...' : `Save (${editedRows.length})`}
+                </Button>
+              </>
+            )}
           </div>
         }
       />
 
       <FilterBar>
-        <div>
-          <Input type="date" value={date} onChange={(e) => { setDate(e.target.value); setPage(1); }} className="w-44" />
-        </div>
-        <Select value={unitId} onChange={(e) => { setUnitId(e.target.value); setPage(1); }} className="w-44">
+        <Input type="date" value={date} onChange={(e) => { setDate(e.target.value); setEdits({}); }} className="w-44" />
+        <Select value={unitId} onChange={(e) => { setUnitId(e.target.value); setEdits({}); }} className="w-44">
           <option value="">All Units</option>
           {units.map((u) => <option key={u.id} value={u.id}>{u.code} — {u.name}</option>)}
         </Select>
+        <div className="ml-auto flex items-center gap-3 text-sm">
+          <span className="text-muted-foreground">Planned <b className="text-foreground">{totals.planned}</b></span>
+          <span className="text-muted-foreground">Actual <b className="text-foreground">{totals.actual}</b></span>
+          {totals.shortage > 0 && <Badge className="bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">Shortage {totals.shortage}</Badge>}
+          {totals.excess > 0 && <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Excess {totals.excess}</Badge>}
+        </div>
       </FilterBar>
 
       <Card>
-        <DataTable columns={columns} data={data?.data ?? []} loading={isLoading} meta={data?.meta} onPageChange={setPage}
-          emptyTitle="No entries for this date" emptyDescription="Add a daily actual entry to begin." />
+        {isLoading ? (
+          <LoadingState rows={8} />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/50 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th className="px-4 py-3">Unit</th>
+                  <th className="px-4 py-3">Cost Code</th>
+                  <th className="px-4 py-3">Cost Centre</th>
+                  <th className="px-4 py-3 text-right">Planned</th>
+                  <th className="px-4 py-3 text-right">Actual</th>
+                  <th className="px-4 py-3 text-right">Shortage</th>
+                  <th className="px-4 py-3 text-right">Excess</th>
+                  <th className="px-4 py-3">Remarks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => {
+                  const v = previewVariance(r);
+                  return (
+                    <tr key={r.costCenterId} className={`border-b border-border last:border-0 ${isDirty(r) ? 'bg-amber-50 dark:bg-amber-950/20' : ''}`}>
+                      <td className="px-4 py-2 font-medium">{r.unit}</td>
+                      <td className="px-4 py-2">{r.costCode}</td>
+                      <td className="px-4 py-2">{r.costCentre}</td>
+                      <td className="px-4 py-2 text-right">{r.planned}</td>
+                      <td className="px-4 py-2 text-right">
+                        {canEnter ? (
+                          <Input
+                            type="number"
+                            min={0}
+                            className="ml-auto w-24 text-right"
+                            value={valueFor(r) ?? ''}
+                            placeholder="—"
+                            onChange={(e) => setEdit(r, { actualCount: e.target.value === '' ? null : Number(e.target.value) })}
+                          />
+                        ) : (
+                          <span>{r.actualCount ?? '—'}</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        {v.shortage && v.shortage > 0 ? <Badge className="bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">{v.shortage}</Badge> : '—'}
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        {v.excess && v.excess > 0 ? <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">{v.excess}</Badge> : '—'}
+                      </td>
+                      <td className="px-4 py-2">
+                        {canEnter ? (
+                          <Input value={remarksFor(r)} placeholder="" onChange={(e) => setEdit(r, { remarks: e.target.value })} />
+                        ) : (
+                          <span className="text-muted-foreground">{r.remarks ?? ''}</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {!rows.length && (
+              <div className="p-8 text-center text-sm text-muted-foreground">No cost centers available for this filter.</div>
+            )}
+          </div>
+        )}
       </Card>
-
-      {createOpen && <EntryModal date={date} onClose={() => setCreateOpen(false)} onSaved={() => { setCreateOpen(false); invalidate(); }} />}
     </div>
-  );
-}
-
-function EntryModal({ date, onClose, onSaved }: { date: string; onClose: () => void; onSaved: () => void }) {
-  const { user } = useAuth();
-  const { data: units = [] } = useUnits();
-  const { data: vendors = [] } = useVendors();
-  const [form, setForm] = useState({ date, unitId: '', costCenterId: '', vendorId: '', type: 'MALE', actualCount: 0, remarks: '' });
-  const { data: allCostCenters = [] } = useCostCenters(form.unitId || undefined);
-
-  // USER_MASTER is restricted to assigned cost centers (backend enforces; we also filter the dropdown)
-  const costCenters = user?.role === 'USER_MASTER' && user.costCenterIds.length
-    ? allCostCenters.filter((c) => user.costCenterIds.includes(c.id))
-    : allCostCenters;
-
-  const mut = useMutation({
-    mutationFn: () => actualApi.save(form as never),
-    onSuccess: () => { toast.success('Entry saved'); onSaved(); },
-    onError: (e) => toast.error(apiErrorMessage(e)),
-  });
-
-  const submit = () => {
-    if (!form.unitId || !form.costCenterId || !form.vendorId) return toast.error('Unit, cost center and vendor are required');
-    if (form.actualCount < 0) return toast.error('Actual count cannot be negative');
-    mut.mutate();
-  };
-
-  return (
-    <Modal open onClose={onClose} title="Daily Actual Entry" size="lg">
-      <div className="grid grid-cols-2 gap-4">
-        <div><Label>Date</Label><Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
-        <div><Label>Type</Label><Select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>{MANPOWER_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</Select></div>
-        <div><Label>Unit</Label><Select value={form.unitId} onChange={(e) => setForm({ ...form, unitId: e.target.value, costCenterId: '' })}><option value="">Select...</option>{units.map((u) => <option key={u.id} value={u.id}>{u.code} — {u.name}</option>)}</Select></div>
-        <div><Label>Cost Center</Label><Select value={form.costCenterId} onChange={(e) => setForm({ ...form, costCenterId: e.target.value })}><option value="">Select...</option>{costCenters.map((c) => <option key={c.id} value={c.id}>{c.costCode} — {c.costCentre}</option>)}</Select></div>
-        <div><Label>Vendor</Label><Select value={form.vendorId} onChange={(e) => setForm({ ...form, vendorId: e.target.value })}><option value="">Select...</option>{vendors.map((v) => <option key={v.id} value={v.id}>{v.vendorName}</option>)}</Select></div>
-        <div><Label>Actual Count</Label><Input type="number" min={0} value={form.actualCount} onChange={(e) => setForm({ ...form, actualCount: Number(e.target.value) })} /></div>
-        <div className="col-span-2"><Label>Remarks</Label><Textarea value={form.remarks} onChange={(e) => setForm({ ...form, remarks: e.target.value })} /></div>
-      </div>
-      <p className="mt-2 text-xs text-muted-foreground">Shortage / excess are computed automatically against the relevant approved monthly plan.</p>
-      <div className="mt-4 flex justify-end gap-2">
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
-        <Button onClick={submit} disabled={mut.isPending}>{mut.isPending ? 'Saving...' : 'Save Entry'}</Button>
-      </div>
-    </Modal>
   );
 }

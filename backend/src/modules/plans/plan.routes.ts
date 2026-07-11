@@ -10,12 +10,12 @@ import { auditFromRequest } from '../../utils/audit';
 import { planService } from './plan.service';
 import {
   approvalSchema,
-  bulkPlanSchema,
-  createPlanSchema,
   duplicateSchema,
+  gridQuerySchema,
+  monthActionSchema,
   planListQuery,
   rejectSchema,
-  updatePlanSchema,
+  saveGridSchema,
 } from './plan.validation';
 
 const router = Router();
@@ -30,6 +30,17 @@ router.get(
     const { page = 1, pageSize = 25, sortBy = 'createdAt', sortDir = 'desc', ...filters } = req.query as any;
     const result = await planService.list({ page: Number(page), pageSize: Number(pageSize), sortBy, sortDir, filters });
     return paginated(res, result.rows, result.meta);
+  }),
+);
+
+// Grid view: one row per active cost center for a month (plan values merged in)
+router.get(
+  '/grid',
+  authorize('SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT'),
+  validate({ query: gridQuerySchema }),
+  asyncHandler(async (req, res) => {
+    const { year, month, unitId } = req.query as any;
+    return success(res, await planService.grid(Number(year), Number(month), unitId));
   }),
 );
 
@@ -49,25 +60,16 @@ router.get(
   asyncHandler(async (req, res) => success(res, await planService.getById(req.params.id))),
 );
 
+// Grid save / Excel import — every touched row becomes PENDING and needs approval
 router.post(
-  '/',
+  '/grid',
   authorize('SUPER_ADMIN', 'HR_ADMIN'),
-  validate({ body: createPlanSchema }),
+  validate({ body: saveGridSchema }),
   asyncHandler(async (req, res) => {
-    const plan = await planService.create({ ...req.body, createdById: req.user!.id });
-    await auditFromRequest(req, { action: 'CREATE', module: 'PLAN', entityType: 'ManpowerPlan', entityId: plan.id, metadata: req.body });
-    return success(res, plan, 201);
-  }),
-);
-
-router.put(
-  '/:id',
-  authorize('SUPER_ADMIN', 'HR_ADMIN'),
-  validate({ params: idParamSchema, body: updatePlanSchema }),
-  asyncHandler(async (req, res) => {
-    const plan = await planService.update(req.params.id, req.body);
-    await auditFromRequest(req, { action: 'UPDATE', module: 'PLAN', entityType: 'ManpowerPlan', entityId: plan.id, metadata: req.body });
-    return success(res, plan);
+    const { year, month, rows } = req.body;
+    const result = await planService.saveGrid(year, month, rows, { id: req.user!.id, name: req.user!.username });
+    await auditFromRequest(req, { action: 'SAVE_GRID', module: 'PLAN', metadata: { year, month, saved: result.saved, unchanged: result.unchanged } });
+    return success(res, result, 201);
   }),
 );
 
@@ -82,21 +84,10 @@ router.delete(
   }),
 );
 
-// Workflow transitions
-router.post(
-  '/:id/submit',
-  authorize('SUPER_ADMIN', 'HR_ADMIN'),
-  validate({ params: idParamSchema }),
-  asyncHandler(async (req, res) => {
-    const plan = await planService.transition(req.params.id, PlanStatus.PENDING, req.user!.id, 'Submitted for approval');
-    await auditFromRequest(req, { action: 'SUBMIT', module: 'PLAN', entityType: 'ManpowerPlan', entityId: plan.id });
-    return success(res, plan);
-  }),
-);
-
+// Approval workflow — HR Admin or Super Admin
 router.post(
   '/:id/approve',
-  authorize('SUPER_ADMIN', 'MANAGEMENT'),
+  authorize('SUPER_ADMIN', 'HR_ADMIN'),
   validate({ params: idParamSchema, body: approvalSchema }),
   asyncHandler(async (req, res) => {
     const plan = await planService.transition(req.params.id, PlanStatus.APPROVED, req.user!.id, req.body.remarks);
@@ -107,7 +98,7 @@ router.post(
 
 router.post(
   '/:id/reject',
-  authorize('SUPER_ADMIN', 'MANAGEMENT'),
+  authorize('SUPER_ADMIN', 'HR_ADMIN'),
   validate({ params: idParamSchema, body: rejectSchema }),
   asyncHandler(async (req, res) => {
     const plan = await planService.transition(req.params.id, PlanStatus.REJECTED, req.user!.id, req.body.remarks);
@@ -116,15 +107,28 @@ router.post(
   }),
 );
 
-// Bulk import
+// Approve / reject every pending plan of a month in one action
 router.post(
-  '/bulk',
+  '/approve-month',
   authorize('SUPER_ADMIN', 'HR_ADMIN'),
-  validate({ body: bulkPlanSchema }),
+  validate({ body: monthActionSchema }),
   asyncHandler(async (req, res) => {
-    const result = await planService.bulkCreate(req.body.rows, req.user!.id);
-    await auditFromRequest(req, { action: 'IMPORT', module: 'PLAN', metadata: { created: result.created, skipped: result.skipped } });
-    return success(res, result, 201);
+    const { year, month, remarks } = req.body;
+    const result = await planService.transitionMonth(year, month, 'APPROVED', req.user!.id, remarks);
+    await auditFromRequest(req, { action: 'APPROVE_MONTH', module: 'PLAN', metadata: { year, month, count: result.count } });
+    return success(res, result);
+  }),
+);
+
+router.post(
+  '/reject-month',
+  authorize('SUPER_ADMIN', 'HR_ADMIN'),
+  validate({ body: monthActionSchema.extend({ remarks: rejectSchema.shape.remarks }) }),
+  asyncHandler(async (req, res) => {
+    const { year, month, remarks } = req.body;
+    const result = await planService.transitionMonth(year, month, 'REJECTED', req.user!.id, remarks);
+    await auditFromRequest(req, { action: 'REJECT_MONTH', module: 'PLAN', metadata: { year, month, count: result.count } });
+    return success(res, result);
   }),
 );
 

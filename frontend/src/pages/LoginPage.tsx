@@ -92,11 +92,6 @@ export default function LoginPage() {
               {isSubmitting ? <Spinner /> : <><LogIn className="h-4 w-4" /> Sign in</>}
             </Button>
           </form>
-
-          <div className="mt-6 rounded-lg border border-dashed border-border bg-muted/40 p-3 text-xs text-muted-foreground">
-            <p className="font-medium text-foreground">Default Super Admin (development)</p>
-            <p>Username: <code className="font-mono">superadmin</code> · Password from <code className="font-mono">SUPER_ADMIN_PASSWORD</code></p>
-          </div>
         </motion.div>
       </div>
     </div>

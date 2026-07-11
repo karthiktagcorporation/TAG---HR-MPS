@@ -1,12 +1,8 @@
 import { z } from 'zod';
-import { manpowerType } from '../plans/plan.validation';
 
 export const actualRowSchema = z.object({
   date: z.coerce.date(),
-  unitId: z.string().min(1),
   costCenterId: z.string().min(1),
-  vendorId: z.string().min(1),
-  type: manpowerType,
   actualCount: z.coerce.number().int().min(0, 'Actual count cannot be negative'),
   remarks: z.string().max(500).optional().nullable(),
 });
@@ -19,6 +15,11 @@ export const updateActualSchema = z.object({
 
 export const bulkActualSchema = z.object({ rows: z.array(actualRowSchema).min(1).max(5000) });
 
+export const actualGridQuery = z.object({
+  date: z.coerce.date(),
+  unitId: z.string().optional(),
+});
+
 export const actualListQuery = z.object({
   page: z.coerce.number().optional(),
   pageSize: z.coerce.number().optional(),
@@ -28,6 +29,4 @@ export const actualListQuery = z.object({
   dateTo: z.coerce.date().optional(),
   unitId: z.string().optional(),
   costCenterId: z.string().optional(),
-  vendorId: z.string().optional(),
-  type: manpowerType.optional(),
 });

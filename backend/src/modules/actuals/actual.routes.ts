@@ -9,7 +9,7 @@ import { idParamSchema } from '../../utils/commonSchemas';
 import { paginated, success } from '../../utils/apiResponse';
 import { auditFromRequest } from '../../utils/audit';
 import { actualService } from './actual.service';
-import { actualListQuery, bulkActualSchema, createActualSchema, updateActualSchema } from './actual.validation';
+import { actualGridQuery, actualListQuery, bulkActualSchema, createActualSchema, updateActualSchema } from './actual.validation';
 
 const router = Router();
 router.use(authenticate);
@@ -29,6 +29,19 @@ router.get(
       scopedCostCenterIds: allowedCostCenterIds(req),
     });
     return paginated(res, result.rows, result.meta);
+  }),
+);
+
+// Grid view for a date: one row per (scoped) cost center with plan + entry merged
+router.get(
+  '/grid',
+  authorize('SUPER_ADMIN', 'HR_ADMIN', 'USER_MASTER'),
+  validate({ query: actualGridQuery }),
+  asyncHandler(async (req, res) => {
+    const { date, unitId } = req.query as any;
+    const d = new Date(date);
+    const utc = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    return success(res, await actualService.grid(utc, allowedCostCenterIds(req), unitId));
   }),
 );
 

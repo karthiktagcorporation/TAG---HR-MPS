@@ -54,17 +54,19 @@ export const notificationService = {
   async generateAlerts() {
     const created: string[] = [];
 
-    // Pending approvals → MANAGEMENT
+    // Pending approvals → HR_ADMIN + SUPER_ADMIN (the approvers)
     const pending = await prisma.manpowerPlan.count({ where: { status: 'PENDING', deletedAt: null } });
     if (pending > 0) {
-      await this.create({
-        title: 'Plans pending approval',
-        message: `${pending} manpower plan(s) are awaiting approval.`,
-        type: 'PENDING_APPROVAL',
-        severity: 'WARNING',
-        roleCode: 'MANAGEMENT',
-        link: '/plans?status=PENDING',
-      });
+      for (const roleCode of ['HR_ADMIN', 'SUPER_ADMIN'] as RoleCode[]) {
+        await this.create({
+          title: 'Plans pending approval',
+          message: `${pending} manpower plan(s) are awaiting approval.`,
+          type: 'PENDING_APPROVAL',
+          severity: 'WARNING',
+          roleCode,
+          link: '/plans?status=PENDING',
+        });
+      }
       created.push('pending-approvals');
     }
 

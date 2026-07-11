@@ -5,9 +5,6 @@ CREATE TYPE "RoleCode" AS ENUM ('SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT', 'USER_M
 CREATE TYPE "MasterStatus" AS ENUM ('ACTIVE', 'INACTIVE');
 
 -- CreateEnum
-CREATE TYPE "ManpowerType" AS ENUM ('MALE', 'FEMALE', 'SKILLED', 'SEMI_SKILLED', 'UNSKILLED', 'STAFF', 'GENERAL');
-
--- CreateEnum
 CREATE TYPE "PlanStatus" AS ENUM ('DRAFT', 'PENDING', 'APPROVED', 'REJECTED');
 
 -- CreateEnum
@@ -100,25 +97,11 @@ CREATE TABLE "units" (
 );
 
 -- CreateTable
-CREATE TABLE "departments" (
-    "id" TEXT NOT NULL,
-    "code" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
-    "status" "MasterStatus" NOT NULL DEFAULT 'ACTIVE',
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-    "deletedAt" TIMESTAMP(3),
-
-    CONSTRAINT "departments_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "cost_centers" (
     "id" TEXT NOT NULL,
     "costCode" TEXT NOT NULL,
     "costCentre" TEXT NOT NULL,
     "unitId" TEXT NOT NULL,
-    "departmentId" TEXT,
     "status" "MasterStatus" NOT NULL DEFAULT 'ACTIVE',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
@@ -134,8 +117,6 @@ CREATE TABLE "manpower_plans" (
     "month" INTEGER NOT NULL,
     "unitId" TEXT NOT NULL,
     "costCenterId" TEXT NOT NULL,
-    "vendorId" TEXT NOT NULL,
-    "genderOrType" "ManpowerType" NOT NULL,
     "plannedCount" INTEGER NOT NULL,
     "remarks" TEXT,
     "status" "PlanStatus" NOT NULL DEFAULT 'DRAFT',
@@ -169,8 +150,6 @@ CREATE TABLE "manpower_actuals" (
     "date" DATE NOT NULL,
     "unitId" TEXT NOT NULL,
     "costCenterId" TEXT NOT NULL,
-    "vendorId" TEXT NOT NULL,
-    "type" "ManpowerType" NOT NULL,
     "actualCount" INTEGER NOT NULL,
     "shortage" INTEGER NOT NULL DEFAULT 0,
     "excess" INTEGER NOT NULL DEFAULT 0,
@@ -273,16 +252,7 @@ CREATE UNIQUE INDEX "units_code_key" ON "units"("code");
 CREATE INDEX "units_status_idx" ON "units"("status");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "departments_code_key" ON "departments"("code");
-
--- CreateIndex
-CREATE INDEX "departments_status_idx" ON "departments"("status");
-
--- CreateIndex
 CREATE INDEX "cost_centers_unitId_idx" ON "cost_centers"("unitId");
-
--- CreateIndex
-CREATE INDEX "cost_centers_departmentId_idx" ON "cost_centers"("departmentId");
 
 -- CreateIndex
 CREATE INDEX "cost_centers_status_idx" ON "cost_centers"("status");
@@ -300,13 +270,10 @@ CREATE INDEX "manpower_plans_unitId_idx" ON "manpower_plans"("unitId");
 CREATE INDEX "manpower_plans_costCenterId_idx" ON "manpower_plans"("costCenterId");
 
 -- CreateIndex
-CREATE INDEX "manpower_plans_vendorId_idx" ON "manpower_plans"("vendorId");
-
--- CreateIndex
 CREATE INDEX "manpower_plans_status_idx" ON "manpower_plans"("status");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "manpower_plans_year_month_unitId_costCenterId_vendorId_gend_key" ON "manpower_plans"("year", "month", "unitId", "costCenterId", "vendorId", "genderOrType");
+CREATE UNIQUE INDEX "manpower_plans_year_month_costCenterId_key" ON "manpower_plans"("year", "month", "costCenterId");
 
 -- CreateIndex
 CREATE INDEX "plan_status_history_planId_idx" ON "plan_status_history"("planId");
@@ -321,10 +288,7 @@ CREATE INDEX "manpower_actuals_unitId_idx" ON "manpower_actuals"("unitId");
 CREATE INDEX "manpower_actuals_costCenterId_idx" ON "manpower_actuals"("costCenterId");
 
 -- CreateIndex
-CREATE INDEX "manpower_actuals_vendorId_idx" ON "manpower_actuals"("vendorId");
-
--- CreateIndex
-CREATE UNIQUE INDEX "manpower_actuals_date_unitId_costCenterId_vendorId_type_key" ON "manpower_actuals"("date", "unitId", "costCenterId", "vendorId", "type");
+CREATE UNIQUE INDEX "manpower_actuals_date_costCenterId_key" ON "manpower_actuals"("date", "costCenterId");
 
 -- CreateIndex
 CREATE INDEX "notifications_userId_idx" ON "notifications"("userId");
@@ -366,16 +330,10 @@ ALTER TABLE "refresh_tokens" ADD CONSTRAINT "refresh_tokens_userId_fkey" FOREIGN
 ALTER TABLE "cost_centers" ADD CONSTRAINT "cost_centers_unitId_fkey" FOREIGN KEY ("unitId") REFERENCES "units"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "cost_centers" ADD CONSTRAINT "cost_centers_departmentId_fkey" FOREIGN KEY ("departmentId") REFERENCES "departments"("id") ON DELETE SET NULL ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "manpower_plans" ADD CONSTRAINT "manpower_plans_unitId_fkey" FOREIGN KEY ("unitId") REFERENCES "units"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "manpower_plans" ADD CONSTRAINT "manpower_plans_costCenterId_fkey" FOREIGN KEY ("costCenterId") REFERENCES "cost_centers"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "manpower_plans" ADD CONSTRAINT "manpower_plans_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "vendors"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "manpower_plans" ADD CONSTRAINT "manpower_plans_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -396,9 +354,6 @@ ALTER TABLE "manpower_actuals" ADD CONSTRAINT "manpower_actuals_unitId_fkey" FOR
 ALTER TABLE "manpower_actuals" ADD CONSTRAINT "manpower_actuals_costCenterId_fkey" FOREIGN KEY ("costCenterId") REFERENCES "cost_centers"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "manpower_actuals" ADD CONSTRAINT "manpower_actuals_vendorId_fkey" FOREIGN KEY ("vendorId") REFERENCES "vendors"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
 ALTER TABLE "manpower_actuals" ADD CONSTRAINT "manpower_actuals_createdById_fkey" FOREIGN KEY ("createdById") REFERENCES "users"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
@@ -406,3 +361,4 @@ ALTER TABLE "notifications" ADD CONSTRAINT "notifications_userId_fkey" FOREIGN K
 
 -- AddForeignKey
 ALTER TABLE "audit_logs" ADD CONSTRAINT "audit_logs_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+

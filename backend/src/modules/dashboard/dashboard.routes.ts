@@ -17,7 +17,6 @@ const filterSchema = z.object({
   dateTo: z.coerce.date().optional(),
   unitId: z.string().optional(),
   costCenterId: z.string().optional(),
-  vendorId: z.string().optional(),
 });
 
 function buildFilters(req: any): DashboardFilters {
@@ -29,7 +28,6 @@ function buildFilters(req: any): DashboardFilters {
     dateTo: req.query.dateTo ? new Date(req.query.dateTo) : undefined,
     unitId: req.query.unitId || undefined,
     costCenterId: req.query.costCenterId || undefined,
-    vendorId: req.query.vendorId || undefined,
     scopedCostCenterIds: allowedCostCenterIds(req),
   };
 }
