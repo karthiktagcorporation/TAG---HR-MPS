@@ -12,6 +12,9 @@ COPY tsconfig.json ./
 COPY src ./src
 RUN npm run build
 
+# Compile the (idempotent) seed so production can bootstrap roles/admin/masters
+RUN npx tsc prisma/seed.ts --outDir seed-dist --module commonjs --target ES2022 --esModuleInterop --skipLibCheck
+
 # ── Runtime stage ─────────────────────────────────────────────
 FROM node:20-alpine AS runtime
 WORKDIR /app
@@ -26,11 +29,12 @@ COPY --from=build /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=build /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=build /app/dist ./dist
 COPY prisma ./prisma
+COPY --from=build /app/seed-dist/seed.js ./prisma/seed.js
 
 EXPOSE 4000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
   CMD node -e "require('http').get('http://localhost:4000/api/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"
 
-# Run migrations then start. Override in compose/Dokploy if desired.
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/server.js"]
+# Migrate, seed (idempotent upserts — safe on every boot), then start.
+CMD ["sh", "-c", "npx prisma migrate deploy && node prisma/seed.js && node dist/server.js"]

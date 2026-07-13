@@ -1,0 +1,79 @@
+# ─────────────────────────────────────────────────────────────
+# TAG - MPS : Dokploy deployment compose
+# - No host port mappings: Traefik (Dokploy) routes via dokploy-network.
+# - Domains (added in the Dokploy UI):
+#     tagmps.tagcorporation.net        → frontend :80
+#     tagmps.tagcorporation.net /api   → backend  :4000
+# - Backend boots with: migrate deploy → idempotent seed → server.
+# ─────────────────────────────────────────────────────────────
+version: "3.9"
+
+networks:
+  dokploy-network:
+    external: true
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tagmps}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-tagmps}
+    volumes:
+      - tagmps_pgdata:/var/lib/postgresql/data
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tagmps} -d ${POSTGRES_DB:-tagmps}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tagmps}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tagmps}?schema=public
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      JWT_ACCESS_EXPIRES_IN: ${JWT_ACCESS_EXPIRES_IN:-15m}
+      JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://tagmps.tagcorporation.net}
+      AUTH_RATE_LIMIT_WINDOW_MS: ${AUTH_RATE_LIMIT_WINDOW_MS:-900000}
+      AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-20}
+      SUPER_ADMIN_NAME: ${SUPER_ADMIN_NAME:-TAG Super Admin}
+      SUPER_ADMIN_USERNAME: ${SUPER_ADMIN_USERNAME:-superadmin}
+      SUPER_ADMIN_EMAIL: ${SUPER_ADMIN_EMAIL:-admin@tagcorporation.net}
+      SUPER_ADMIN_PASSWORD: ${SUPER_ADMIN_PASSWORD}
+      SEED_SAMPLE_DATA: ${SEED_SAMPLE_DATA:-false}
+    expose:
+      - "4000"
+    networks:
+      - dokploy-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-https://tagmps.tagcorporation.net/api}
+        VITE_APP_NAME: ${VITE_APP_NAME:-TAG - MPS}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    expose:
+      - "80"
+    networks:
+      - dokploy-network
+
+volumes:
+  tagmps_pgdata:
+    driver: local
