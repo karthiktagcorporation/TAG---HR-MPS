@@ -94,7 +94,7 @@ export const actualService = {
     const [plans, actuals] = await Promise.all([
       prisma.manpowerPlan.findMany({
         where: { year, month, status: 'APPROVED', deletedAt: null },
-        select: { costCenterId: true, plannedCount: true, dayPlan: true, nightPlan: true, malePlan: true, femalePlan: true },
+        select: { costCenterId: true, plannedCount: true, dayPlan: true, nightPlan: true },
       }),
       prisma.manpowerActual.findMany({
         where: { date, deletedAt: null },
@@ -120,8 +120,6 @@ export const actualService = {
         planned: plan?.plannedCount ?? 0,
         dayPlan: plan?.dayPlan ?? 0,
         nightPlan: plan?.nightPlan ?? 0,
-        malePlan: plan?.malePlan ?? 0,
-        femalePlan: plan?.femalePlan ?? 0,
         actualId: actual?.id ?? null,
         actualCount: actual?.actualCount ?? null,
         dayActual: actual?.dayActual ?? null,

@@ -18,8 +18,6 @@ import type { PlanGridRow } from '@/types';
 interface Edit {
   dayPlan: number;
   nightPlan: number;
-  malePlan: number;
-  femalePlan: number;
   remarks: string;
 }
 
@@ -51,8 +49,6 @@ export default function PlansPage() {
   const baseFor = (row: PlanGridRow): Edit => ({
     dayPlan: numOr(row.dayPlan),
     nightPlan: numOr(row.nightPlan),
-    malePlan: numOr(row.malePlan),
-    femalePlan: numOr(row.femalePlan),
     remarks: row.remarks ?? '',
   });
   const editFor = (row: PlanGridRow): Edit => edits[row.costCenterId] ?? baseFor(row);
@@ -60,7 +56,7 @@ export default function PlansPage() {
     const e = edits[row.costCenterId];
     if (!e) return false;
     const b = baseFor(row);
-    return e.dayPlan !== b.dayPlan || e.nightPlan !== b.nightPlan || e.malePlan !== b.malePlan || e.femalePlan !== b.femalePlan || e.remarks !== b.remarks;
+    return e.dayPlan !== b.dayPlan || e.nightPlan !== b.nightPlan || e.remarks !== b.remarks;
   };
   const setEdit = (row: PlanGridRow, patch: Partial<Edit>) =>
     setEdits((prev) => ({ ...prev, [row.costCenterId]: { ...editFor(row), ...patch } }));
@@ -71,7 +67,7 @@ export default function PlansPage() {
         .filter((r) => isDirty(r))
         .map((r) => {
           const e = edits[r.costCenterId];
-          return { costCenterId: r.costCenterId, dayPlan: e.dayPlan, nightPlan: e.nightPlan, malePlan: e.malePlan, femalePlan: e.femalePlan, remarks: e.remarks || null };
+          return { costCenterId: r.costCenterId, dayPlan: e.dayPlan, nightPlan: e.nightPlan, remarks: e.remarks || null };
         }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rows, edits],
@@ -101,12 +97,10 @@ export default function PlansPage() {
       'Cost Centre': r.costCentre,
       'Day Plan': r.dayPlan ?? '',
       'Night Plan': r.nightPlan ?? '',
-      Male: r.malePlan ?? '',
-      Female: r.femalePlan ?? '',
       Remarks: r.remarks ?? '',
     }));
     const ws = XLSX.utils.json_to_sheet(data);
-    ws['!cols'] = [{ wch: 8 }, { wch: 12 }, { wch: 32 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 30 }];
+    ws['!cols'] = [{ wch: 8 }, { wch: 12 }, { wch: 32 }, { wch: 10 }, { wch: 10 }, { wch: 30 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Plan');
     XLSX.writeFile(wb, `manpower-plan-${period.year}-${String(period.month).padStart(2, '0')}.xlsx`);
@@ -140,8 +134,6 @@ export default function PlansPage() {
           next[row.costCenterId] = {
             dayPlan: readNum(p, ['Day Plan', 'DayPlan', 'Day', 'day']),
             nightPlan: readNum(p, ['Night Plan', 'NightPlan', 'Night', 'night']),
-            malePlan: readNum(p, ['Male', 'male']),
-            femalePlan: readNum(p, ['Female', 'female']),
             remarks: String(p.Remarks ?? p.remarks ?? ''),
           };
           matched++;
@@ -213,8 +205,6 @@ export default function PlansPage() {
                   <th className="px-3 py-3 text-right">Day Plan</th>
                   <th className="px-3 py-3 text-right">Night Plan</th>
                   <th className="px-3 py-3 text-right">Total</th>
-                  <th className="px-3 py-3 text-right">Male</th>
-                  <th className="px-3 py-3 text-right">Female</th>
                   <th className="px-3 py-3">Remarks</th>
                   <th className="px-3 py-3">Status</th>
                   {canApprove && <th className="px-3 py-3 text-right">Approval</th>}
@@ -234,8 +224,6 @@ export default function PlansPage() {
                       <td className="px-3 py-2 text-right">{canEdit ? numCell(r, 'dayPlan') : <span>{r.dayPlan ?? '—'}</span>}</td>
                       <td className="px-3 py-2 text-right">{canEdit ? numCell(r, 'nightPlan') : <span>{r.nightPlan ?? '—'}</span>}</td>
                       <td className="px-3 py-2 text-right font-semibold">{e.dayPlan + e.nightPlan}</td>
-                      <td className="px-3 py-2 text-right">{canEdit ? numCell(r, 'malePlan') : <span>{r.malePlan ?? '—'}</span>}</td>
-                      <td className="px-3 py-2 text-right">{canEdit ? numCell(r, 'femalePlan') : <span>{r.femalePlan ?? '—'}</span>}</td>
                       <td className="px-3 py-2">
                         {canEdit ? (
                           <Input className="min-w-28" value={e.remarks} onChange={(ev) => setEdit(r, { remarks: ev.target.value })} />

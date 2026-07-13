@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import dayjs from 'dayjs';
 import { FileBarChart, Download } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { FilterBar } from '@/components/FilterBar';
 import { DataTable, Column } from '@/components/DataTable';
 import { PeriodFilters, PeriodValue } from '@/components/PeriodFilters';
 import { ExportActions } from '@/components/ExportActions';
-import { Button, Card, Select } from '@/components/ui';
+import { Button, Card, Input, Select } from '@/components/ui';
 import { ErrorState } from '@/components/States';
 import { reportApi } from '@/services/resources';
 import { tokenStore } from '@/services/api';
@@ -17,13 +18,19 @@ export default function ReportsPage() {
   const now = new Date();
   const [type, setType] = useState('consolidated');
   const [period, setPeriod] = useState<PeriodValue>({ year: now.getFullYear(), month: now.getMonth() + 1 });
+  const [date, setDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [search, setSearch] = useState('');
 
   const { data: defs = [] } = useQuery({ queryKey: ['report-defs'], queryFn: () => reportApi.definitions() });
 
+  const isDaily = type === 'daily-summary';
+
   const params = useMemo(
-    () => ({ year: period.year, month: period.month, unitId: period.unitId, costCenterId: period.costCenterId, search: search || undefined }),
-    [period, search],
+    () =>
+      isDaily
+        ? { dateFrom: date, dateTo: date, unitId: period.unitId, costCenterId: period.costCenterId, search: search || undefined }
+        : { year: period.year, month: period.month, unitId: period.unitId, costCenterId: period.costCenterId, search: search || undefined },
+    [isDaily, date, period, search],
   );
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -37,7 +44,7 @@ export default function ReportsPage() {
     align: ['actual', 'shortage', 'excess', 'planned'].includes(c.key) ? 'right' : 'left',
   }));
 
-  const filterSummary = `Period: ${MONTHS[period.month - 1]} ${period.year}`;
+  const filterSummary = isDaily ? `Date: ${date}` : `Period: ${MONTHS[period.month - 1]} ${period.year}`;
 
   const downloadServerXlsx = () => {
     // Server-side branded export (authenticated fetch → blob)
@@ -78,7 +85,11 @@ export default function ReportsPage() {
         <Select value={type} onChange={(e) => setType(e.target.value)} className="w-56">
           {defs.map((d) => <option key={d.type} value={d.type}>{d.title}</option>)}
         </Select>
-        <PeriodFilters value={period} onChange={setPeriod} show={{ unit: true, costCenter: true }} />
+        {isDaily ? (
+          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-44" />
+        ) : (
+          <PeriodFilters value={period} onChange={setPeriod} show={{ unit: true, costCenter: true }} />
+        )}
       </FilterBar>
 
       <Card>

@@ -216,8 +216,6 @@ model ManpowerPlan {
   plannedCount Int // total = dayPlan + nightPlan
   dayPlan      Int     @default(0)
   nightPlan    Int     @default(0)
-  malePlan     Int     @default(0)
-  femalePlan   Int     @default(0)
   remarks      String?
   status       PlanStatus @default(DRAFT)
 

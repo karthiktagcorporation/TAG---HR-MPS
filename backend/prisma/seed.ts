@@ -52,12 +52,10 @@ const UNITS = [
   { code: 'U2', name: 'Unit 2' },
   { code: 'U3', name: 'Unit 3' },
   { code: 'U4', name: 'Unit 4' },
-  { code: 'SV', name: 'Service / SV' },
 ];
 
 // div(unit) | costCode | costCentre
 const COST_CENTERS: { unit: string; code: string; name: string }[] = [
-  { unit: 'SV', code: 'HFRGN', name: 'FORGING SHOP' },
   { unit: 'U1', code: 'ASSMB', name: 'ASSEMBLY SHOP' },
   { unit: 'U1', code: 'HCTST', name: 'CONDUCTOR TESTING' },
   { unit: 'U1', code: 'HHTST', name: 'HARDWARE TESTING' },

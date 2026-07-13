@@ -24,8 +24,6 @@ export interface GridRow {
   costCenterId: string;
   dayPlan: number;
   nightPlan: number;
-  malePlan: number;
-  femalePlan: number;
   remarks?: string | null;
 }
 
@@ -91,8 +89,6 @@ export const planService = {
         plannedCount: plan?.plannedCount ?? null,
         dayPlan: plan?.dayPlan ?? null,
         nightPlan: plan?.nightPlan ?? null,
-        malePlan: plan?.malePlan ?? null,
-        femalePlan: plan?.femalePlan ?? null,
         remarks: plan?.remarks ?? null,
         status: plan?.status ?? null,
         approvedBy: plan?.approvedBy?.name ?? null,
@@ -131,8 +127,6 @@ export const planService = {
         plannedCount: row.dayPlan + row.nightPlan,
         dayPlan: row.dayPlan,
         nightPlan: row.nightPlan,
-        malePlan: row.malePlan,
-        femalePlan: row.femalePlan,
         remarks: row.remarks,
       };
       try {
@@ -143,8 +137,6 @@ export const planService = {
           const unchanged =
             existing.dayPlan === row.dayPlan &&
             existing.nightPlan === row.nightPlan &&
-            existing.malePlan === row.malePlan &&
-            existing.femalePlan === row.femalePlan &&
             (existing.remarks ?? '') === (row.remarks ?? '');
           if (unchanged) {
             results.unchanged++;
@@ -272,8 +264,6 @@ export const planService = {
             plannedCount: p.plannedCount,
             dayPlan: p.dayPlan,
             nightPlan: p.nightPlan,
-            malePlan: p.malePlan,
-            femalePlan: p.femalePlan,
             remarks: p.remarks,
             status: PlanStatus.PENDING,
             createdById,

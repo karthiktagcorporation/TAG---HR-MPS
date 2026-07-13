@@ -13,7 +13,7 @@ const router = Router();
 router.use(authenticate);
 
 const REPORT_TYPES = [
-  'cost-center', 'unit', 'daily-attendance', 'monthly-summary',
+  'cost-center', 'unit', 'daily-summary', 'daily-attendance', 'monthly-summary',
   'plan-vs-actual', 'shortage', 'excess', 'consolidated',
 ] as const;
 

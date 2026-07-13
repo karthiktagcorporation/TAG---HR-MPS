@@ -6,6 +6,7 @@ export type ReportType =
   | 'cost-center'
   | 'unit'
   | 'daily-attendance'
+  | 'daily-summary'
   | 'monthly-summary'
   | 'plan-vs-actual'
   | 'shortage'
@@ -68,6 +69,7 @@ const REPORT_TITLES: Record<ReportType, string> = {
   'cost-center': 'Cost Center Report',
   unit: 'Unit Report',
   'daily-attendance': 'Daily Attendance Report',
+  'daily-summary': 'Daily Summary',
   'monthly-summary': 'Monthly Summary',
   'plan-vs-actual': 'Plan vs Actual (by Cost Center)',
   shortage: 'Shortage Report',
@@ -89,8 +91,10 @@ export const reportService = {
         return { type, title, ...(await this.byUnit(f)) };
       case 'daily-attendance':
         return { type, title, ...(await this.dailyAttendance(f)) };
+      case 'daily-summary':
+        return { type, title, ...(await this.shiftSummary(f, 'daily')) };
       case 'monthly-summary':
-        return { type, title, ...(await this.monthlySummary(f)) };
+        return { type, title, ...(await this.shiftSummary(f, 'monthly')) };
       case 'plan-vs-actual':
         return { type, title, ...(await this.planVsActual(f)) };
       case 'shortage':
@@ -203,13 +207,27 @@ export const reportService = {
     };
   },
 
-  async monthlySummary(f: ReportFilters) {
-    // One row per cost center with day/night/gender split + a grand total row.
+  /**
+   * Shared day/night/gender summary: one row per cost center + grand total.
+   * mode 'monthly' sums the period's actuals; mode 'daily' shows a single date
+   * (dateFrom, defaulting to today) against that date's monthly plan.
+   */
+  async shiftSummary(f: ReportFilters, mode: 'daily' | 'monthly') {
+    let aWhere = actualWhere(f);
+    let pWhere = planWhere(f);
+    let periodLabel = `${f.month}/${f.year}`;
+    if (mode === 'daily') {
+      const d = f.dateFrom ?? new Date();
+      const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+      aWhere = { ...aWhere, date };
+      pWhere = { ...pWhere, year: date.getUTCFullYear(), month: date.getUTCMonth() + 1 };
+      periodLabel = date.toISOString().slice(0, 10);
+    }
     const [plans, actuals] = await Promise.all([
-      prisma.manpowerPlan.findMany({ where: planWhere(f), include: { costCenter: { include: { unit: true } } } }),
+      prisma.manpowerPlan.findMany({ where: pWhere, include: { costCenter: { include: { unit: true } } } }),
       prisma.manpowerActual.groupBy({
         by: ['costCenterId'],
-        where: actualWhere(f),
+        where: aWhere,
         _sum: { actualCount: true, dayActual: true, nightActual: true, maleActual: true, femaleActual: true, shortage: true, excess: true },
       }),
     ]);
@@ -260,13 +278,13 @@ export const reportService = {
     if (rows.length) {
       const total = rows.reduce(
         (t, r) => ({
-          unit: 'TOTAL', costCode: '', costCentre: `${f.month}/${f.year}`,
+          unit: 'TOTAL', costCode: '', costCentre: periodLabel,
           dayPlan: t.dayPlan + r.dayPlan, nightPlan: t.nightPlan + r.nightPlan, planned: t.planned + r.planned,
           dayActual: t.dayActual + r.dayActual, nightActual: t.nightActual + r.nightActual, actual: t.actual + r.actual,
           male: t.male + r.male, female: t.female + r.female,
           shortage: t.shortage + r.shortage, excess: t.excess + r.excess,
         }),
-        { unit: 'TOTAL', costCode: '', costCentre: `${f.month}/${f.year}`, dayPlan: 0, nightPlan: 0, planned: 0, dayActual: 0, nightActual: 0, actual: 0, male: 0, female: 0, shortage: 0, excess: 0 },
+        { unit: 'TOTAL', costCode: '', costCentre: periodLabel, dayPlan: 0, nightPlan: 0, planned: 0, dayActual: 0, nightActual: 0, actual: 0, male: 0, female: 0, shortage: 0, excess: 0 },
       );
       rows.push(total);
     }

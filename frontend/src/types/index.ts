@@ -81,8 +81,6 @@ export interface PlanGridRow {
   plannedCount: number | null;
   dayPlan: number | null;
   nightPlan: number | null;
-  malePlan: number | null;
-  femalePlan: number | null;
   remarks: string | null;
   status: PlanStatus | null;
   approvedBy: string | null;
@@ -124,8 +122,6 @@ export interface ActualGridRow {
   planned: number;
   dayPlan: number;
   nightPlan: number;
-  malePlan: number;
-  femalePlan: number;
   actualId: string | null;
   actualCount: number | null;
   dayActual: number | null;

@@ -57,7 +57,7 @@ export const planApi = {
   pending: () => list<ManpowerPlan>('/plans/pending'),
   grid: (year: number, month: number, unitId?: string) =>
     api.get('/plans/grid', { params: { year, month, unitId } }).then((r) => r.data.data as PlanGridRow[]),
-  saveGrid: (year: number, month: number, rows: { costCenterId: string; dayPlan: number; nightPlan: number; malePlan: number; femalePlan: number; remarks?: string | null }[]) =>
+  saveGrid: (year: number, month: number, rows: { costCenterId: string; dayPlan: number; nightPlan: number; remarks?: string | null }[]) =>
     api.post('/plans/grid', { year, month, rows }).then((r) => r.data.data as { saved: number; unchanged: number; errors: { row: number; message: string }[] }),
   approve: (id: string, remarks?: string) => api.post(`/plans/${id}/approve`, { remarks }).then((r) => r.data.data),
   reject: (id: string, remarks: string) => api.post(`/plans/${id}/reject`, { remarks }).then((r) => r.data.data),

@@ -4,8 +4,6 @@ export const gridRowSchema = z.object({
   costCenterId: z.string().min(1),
   dayPlan: z.coerce.number().int().min(0).default(0),
   nightPlan: z.coerce.number().int().min(0).default(0),
-  malePlan: z.coerce.number().int().min(0).default(0),
-  femalePlan: z.coerce.number().int().min(0).default(0),
   remarks: z.string().max(500).optional().nullable(),
 });
 
