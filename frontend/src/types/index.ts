@@ -9,6 +9,7 @@ export interface AuthUser {
   email: string;
   role: RoleCode;
   costCenterIds: string[];
+  canDeleteActuals: boolean;
 }
 
 export interface LoginResponse {
@@ -46,6 +47,7 @@ export interface CostCenter {
   costCode: string;
   costCentre: string;
   unitId: string;
+  department?: string | null;
   status: MasterStatus;
   unit?: Unit;
 }
@@ -74,8 +76,13 @@ export interface PlanGridRow {
   unitId: string;
   costCode: string;
   costCentre: string;
+  department: string | null;
   planId: string | null;
   plannedCount: number | null;
+  dayPlan: number | null;
+  nightPlan: number | null;
+  malePlan: number | null;
+  femalePlan: number | null;
   remarks: string | null;
   status: PlanStatus | null;
   approvedBy: string | null;
@@ -88,11 +95,22 @@ export interface ManpowerActual {
   unitId: string;
   costCenterId: string;
   actualCount: number;
+  dayActual: number;
+  nightActual: number;
+  maleActual: number;
+  femaleActual: number;
   shortage: number;
   excess: number;
   remarks?: string | null;
   unit?: Unit;
   costCenter?: CostCenter;
+}
+
+/** Vendor-wise count for one shift of a daily actual entry. */
+export interface VendorAllocation {
+  vendorId: string;
+  vendorName?: string;
+  count: number;
 }
 
 /** One row of the daily actual grid: a cost center + plan + entry for the date (if any). */
@@ -102,12 +120,23 @@ export interface ActualGridRow {
   unitId: string;
   costCode: string;
   costCentre: string;
+  department: string | null;
   planned: number;
+  dayPlan: number;
+  nightPlan: number;
+  malePlan: number;
+  femalePlan: number;
   actualId: string | null;
   actualCount: number | null;
+  dayActual: number | null;
+  nightActual: number | null;
+  maleActual: number | null;
+  femaleActual: number | null;
   shortage: number | null;
   excess: number | null;
   remarks: string | null;
+  dayVendors: VendorAllocation[];
+  nightVendors: VendorAllocation[];
 }
 
 export interface DashboardData {

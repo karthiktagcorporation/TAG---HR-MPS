@@ -18,6 +18,7 @@ function toAuthUser(user: {
   email: string;
   role: { code: string };
   costCenters: { costCenterId: string }[];
+  canDeleteActuals: boolean;
 }) {
   return {
     id: user.id,
@@ -26,6 +27,7 @@ function toAuthUser(user: {
     email: user.email,
     role: user.role.code,
     costCenterIds: user.costCenters.map((c) => c.costCenterId),
+    canDeleteActuals: user.canDeleteActuals,
   };
 }
 
@@ -124,6 +126,8 @@ export const authService = {
       role: user.role.code,
       roleName: user.role.name,
       lastLoginAt: user.lastLoginAt,
+      canDeleteActuals: user.canDeleteActuals,
+      costCenterIds: user.costCenters.map((c) => c.costCenter.id),
       costCenters: user.costCenters.map((c) => ({
         id: c.costCenter.id,
         costCode: c.costCenter.costCode,

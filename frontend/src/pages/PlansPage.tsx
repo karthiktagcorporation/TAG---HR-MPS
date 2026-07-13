@@ -16,9 +16,14 @@ import { useAuth } from '@/context/AuthContext';
 import type { PlanGridRow } from '@/types';
 
 interface Edit {
-  plannedCount: number | null;
+  dayPlan: number;
+  nightPlan: number;
+  malePlan: number;
+  femalePlan: number;
   remarks: string;
 }
+
+const numOr = (v: number | null, fallback = 0) => (v === null || v === undefined || Number.isNaN(v) ? fallback : v);
 
 export default function PlansPage() {
   const { hasRole } = useAuth();
@@ -43,12 +48,33 @@ export default function PlansPage() {
     qc.invalidateQueries({ queryKey: ['plans'] });
   };
 
+  const baseFor = (row: PlanGridRow): Edit => ({
+    dayPlan: numOr(row.dayPlan),
+    nightPlan: numOr(row.nightPlan),
+    malePlan: numOr(row.malePlan),
+    femalePlan: numOr(row.femalePlan),
+    remarks: row.remarks ?? '',
+  });
+  const editFor = (row: PlanGridRow): Edit => edits[row.costCenterId] ?? baseFor(row);
+  const isDirty = (row: PlanGridRow) => {
+    const e = edits[row.costCenterId];
+    if (!e) return false;
+    const b = baseFor(row);
+    return e.dayPlan !== b.dayPlan || e.nightPlan !== b.nightPlan || e.malePlan !== b.malePlan || e.femalePlan !== b.femalePlan || e.remarks !== b.remarks;
+  };
+  const setEdit = (row: PlanGridRow, patch: Partial<Edit>) =>
+    setEdits((prev) => ({ ...prev, [row.costCenterId]: { ...editFor(row), ...patch } }));
+
   const editedRows = useMemo(
     () =>
-      Object.entries(edits)
-        .filter(([, e]) => e.plannedCount !== null && !Number.isNaN(e.plannedCount))
-        .map(([costCenterId, e]) => ({ costCenterId, plannedCount: e.plannedCount as number, remarks: e.remarks || null })),
-    [edits],
+      rows
+        .filter((r) => isDirty(r))
+        .map((r) => {
+          const e = edits[r.costCenterId];
+          return { costCenterId: r.costCenterId, dayPlan: e.dayPlan, nightPlan: e.nightPlan, malePlan: e.malePlan, femalePlan: e.femalePlan, remarks: e.remarks || null };
+        }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, edits],
   );
 
   const saveMut = useMutation({
@@ -65,22 +91,6 @@ export default function PlansPage() {
   const act = (fn: () => Promise<unknown>, msg: string) =>
     fn().then(() => { toast.success(msg); invalidate(); }).catch((e) => toast.error(apiErrorMessage(e)));
 
-  const setEdit = (row: PlanGridRow, patch: Partial<Edit>) =>
-    setEdits((prev) => ({
-      ...prev,
-      [row.costCenterId]: {
-        plannedCount: prev[row.costCenterId]?.plannedCount ?? row.plannedCount,
-        remarks: prev[row.costCenterId]?.remarks ?? (row.remarks ?? ''),
-        ...patch,
-      },
-    }));
-
-  const valueFor = (row: PlanGridRow) => edits[row.costCenterId]?.plannedCount ?? row.plannedCount;
-  const remarksFor = (row: PlanGridRow) => edits[row.costCenterId]?.remarks ?? (row.remarks ?? '');
-  const isDirty = (row: PlanGridRow) =>
-    edits[row.costCenterId] !== undefined &&
-    (edits[row.costCenterId].plannedCount !== row.plannedCount || edits[row.costCenterId].remarks !== (row.remarks ?? ''));
-
   const pendingCount = rows.filter((r) => r.status === 'PENDING').length;
 
   // ---- Excel import / template ----
@@ -89,11 +99,14 @@ export default function PlansPage() {
       Unit: r.unit,
       'Cost Code': r.costCode,
       'Cost Centre': r.costCentre,
-      Planned: r.plannedCount ?? '',
+      'Day Plan': r.dayPlan ?? '',
+      'Night Plan': r.nightPlan ?? '',
+      Male: r.malePlan ?? '',
+      Female: r.femalePlan ?? '',
       Remarks: r.remarks ?? '',
     }));
     const ws = XLSX.utils.json_to_sheet(data);
-    ws['!cols'] = [{ wch: 8 }, { wch: 12 }, { wch: 32 }, { wch: 10 }, { wch: 30 }];
+    ws['!cols'] = [{ wch: 8 }, { wch: 12 }, { wch: 32 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 8 }, { wch: 30 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Plan');
     XLSX.writeFile(wb, `manpower-plan-${period.year}-${String(period.month).padStart(2, '0')}.xlsx`);
@@ -110,13 +123,27 @@ export default function PlansPage() {
         let matched = 0;
         let skipped = 0;
         const next: Record<string, Edit> = { ...edits };
+        const readNum = (p: Record<string, unknown>, keys: string[]) => {
+          for (const k of keys) {
+            if (p[k] !== undefined && p[k] !== '') {
+              const n = Number(p[k]);
+              if (!Number.isNaN(n) && n >= 0) return Math.round(n);
+            }
+          }
+          return 0;
+        };
         for (const p of parsed) {
           const unit = String(p.Unit ?? p.unit ?? '').trim().toUpperCase();
           const code = String(p['Cost Code'] ?? p.CostCode ?? p.costCode ?? '').trim().toUpperCase();
-          const planned = Number(p.Planned ?? p.planned ?? p['Planned Count']);
           const row = byKey.get(`${unit}|${code}`);
-          if (!row || Number.isNaN(planned) || planned < 0) { skipped++; continue; }
-          next[row.costCenterId] = { plannedCount: Math.round(planned), remarks: String(p.Remarks ?? p.remarks ?? '') };
+          if (!row) { skipped++; continue; }
+          next[row.costCenterId] = {
+            dayPlan: readNum(p, ['Day Plan', 'DayPlan', 'Day', 'day']),
+            nightPlan: readNum(p, ['Night Plan', 'NightPlan', 'Night', 'night']),
+            malePlan: readNum(p, ['Male', 'male']),
+            femalePlan: readNum(p, ['Female', 'female']),
+            remarks: String(p.Remarks ?? p.remarks ?? ''),
+          };
           matched++;
         }
         setEdits(next);
@@ -128,11 +155,21 @@ export default function PlansPage() {
     reader.readAsArrayBuffer(file);
   };
 
+  const numCell = (row: PlanGridRow, field: keyof Omit<Edit, 'remarks'>) => (
+    <Input
+      type="number"
+      min={0}
+      className="ml-auto w-20 text-right"
+      value={editFor(row)[field]}
+      onChange={(e) => setEdit(row, { [field]: e.target.value === '' ? 0 : Number(e.target.value) } as Partial<Edit>)}
+    />
+  );
+
   return (
     <div>
       <PageHeader
         title="Manpower Plan"
-        subtitle="Monthly planned manpower per cost center — every change goes for approval"
+        subtitle="Monthly day/night planned manpower per cost center — every change goes for approval"
         breadcrumbs={['Operations', 'Manpower Plan']}
         actions={
           <div className="flex flex-wrap gap-2">
@@ -170,60 +207,61 @@ export default function PlansPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border bg-muted/50 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-3">Unit</th>
-                  <th className="px-4 py-3">Cost Code</th>
-                  <th className="px-4 py-3">Cost Centre</th>
-                  <th className="px-4 py-3 text-right">Planned</th>
-                  <th className="px-4 py-3">Remarks</th>
-                  <th className="px-4 py-3">Status</th>
-                  {canApprove && <th className="px-4 py-3 text-right">Approval</th>}
+                  <th className="px-3 py-3">Unit</th>
+                  <th className="px-3 py-3">Cost Code</th>
+                  <th className="px-3 py-3">Cost Centre</th>
+                  <th className="px-3 py-3 text-right">Day Plan</th>
+                  <th className="px-3 py-3 text-right">Night Plan</th>
+                  <th className="px-3 py-3 text-right">Total</th>
+                  <th className="px-3 py-3 text-right">Male</th>
+                  <th className="px-3 py-3 text-right">Female</th>
+                  <th className="px-3 py-3">Remarks</th>
+                  <th className="px-3 py-3">Status</th>
+                  {canApprove && <th className="px-3 py-3 text-right">Approval</th>}
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
-                  <tr key={r.costCenterId} className={`border-b border-border last:border-0 ${isDirty(r) ? 'bg-amber-50 dark:bg-amber-950/20' : ''}`}>
-                    <td className="px-4 py-2 font-medium">{r.unit}</td>
-                    <td className="px-4 py-2">{r.costCode}</td>
-                    <td className="px-4 py-2">{r.costCentre}</td>
-                    <td className="px-4 py-2 text-right">
-                      {canEdit ? (
-                        <Input
-                          type="number"
-                          min={0}
-                          className="ml-auto w-24 text-right"
-                          value={valueFor(r) ?? ''}
-                          placeholder="—"
-                          onChange={(e) => setEdit(r, { plannedCount: e.target.value === '' ? null : Number(e.target.value) })}
-                        />
-                      ) : (
-                        <span>{r.plannedCount ?? '—'}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2">
-                      {canEdit ? (
-                        <Input value={remarksFor(r)} placeholder="" onChange={(e) => setEdit(r, { remarks: e.target.value })} />
-                      ) : (
-                        <span className="text-muted-foreground">{r.remarks ?? ''}</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2">
-                      {r.status ? <StatusBadge status={r.status} /> : <span className="text-xs text-muted-foreground">No plan</span>}
-                      {r.status === 'REJECTED' && r.rejectionRemarks && (
-                        <div className="mt-1 text-xs text-red-600">{r.rejectionRemarks}</div>
-                      )}
-                    </td>
-                    {canApprove && (
-                      <td className="px-4 py-2 text-right">
-                        {r.status === 'PENDING' && r.planId && (
-                          <div className="flex justify-end gap-1">
-                            <Button variant="ghost" size="icon" className="text-emerald-600" title="Approve" onClick={() => act(() => planApi.approve(r.planId!), 'Approved')}><Check className="h-4 w-4" /></Button>
-                            <Button variant="ghost" size="icon" className="text-red-600" title="Reject" onClick={() => { setRejecting(r); setRejectRemarks(''); }}><X className="h-4 w-4" /></Button>
-                          </div>
+                {rows.map((r) => {
+                  const e = editFor(r);
+                  return (
+                    <tr key={r.costCenterId} className={`border-b border-border last:border-0 ${isDirty(r) ? 'bg-amber-50 dark:bg-amber-950/20' : ''}`}>
+                      <td className="px-3 py-2 font-medium">{r.unit}</td>
+                      <td className="px-3 py-2">{r.costCode}</td>
+                      <td className="px-3 py-2">
+                        {r.costCentre}
+                        {r.department && <span className="block text-xs text-muted-foreground">{r.department}</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right">{canEdit ? numCell(r, 'dayPlan') : <span>{r.dayPlan ?? '—'}</span>}</td>
+                      <td className="px-3 py-2 text-right">{canEdit ? numCell(r, 'nightPlan') : <span>{r.nightPlan ?? '—'}</span>}</td>
+                      <td className="px-3 py-2 text-right font-semibold">{e.dayPlan + e.nightPlan}</td>
+                      <td className="px-3 py-2 text-right">{canEdit ? numCell(r, 'malePlan') : <span>{r.malePlan ?? '—'}</span>}</td>
+                      <td className="px-3 py-2 text-right">{canEdit ? numCell(r, 'femalePlan') : <span>{r.femalePlan ?? '—'}</span>}</td>
+                      <td className="px-3 py-2">
+                        {canEdit ? (
+                          <Input className="min-w-28" value={e.remarks} onChange={(ev) => setEdit(r, { remarks: ev.target.value })} />
+                        ) : (
+                          <span className="text-muted-foreground">{r.remarks ?? ''}</span>
                         )}
                       </td>
-                    )}
-                  </tr>
-                ))}
+                      <td className="px-3 py-2">
+                        {r.status ? <StatusBadge status={r.status} /> : <span className="text-xs text-muted-foreground">No plan</span>}
+                        {r.status === 'REJECTED' && r.rejectionRemarks && (
+                          <div className="mt-1 text-xs text-red-600">{r.rejectionRemarks}</div>
+                        )}
+                      </td>
+                      {canApprove && (
+                        <td className="px-3 py-2 text-right">
+                          {r.status === 'PENDING' && r.planId && (
+                            <div className="flex justify-end gap-1">
+                              <Button variant="ghost" size="icon" className="text-emerald-600" title="Approve" onClick={() => act(() => planApi.approve(r.planId!), 'Approved')}><Check className="h-4 w-4" /></Button>
+                              <Button variant="ghost" size="icon" className="text-red-600" title="Reject" onClick={() => { setRejecting(r); setRejectRemarks(''); }}><X className="h-4 w-4" /></Button>
+                            </div>
+                          )}
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

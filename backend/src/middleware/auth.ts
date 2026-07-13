@@ -35,6 +35,7 @@ export const authenticate = asyncHandler(async (req: Request, _res: Response, ne
     name: user.name,
     role: user.role.code,
     costCenterIds: user.costCenters.map((c) => c.costCenterId),
+    canDeleteActuals: user.canDeleteActuals,
   };
 
   next();

@@ -16,6 +16,7 @@ const createSchema = z.object({
   costCode: z.string().min(1).max(30),
   costCentre: z.string().min(1).max(150),
   unitId: z.string().min(1),
+  department: z.string().max(120).optional().nullable(),
   status: masterStatus.optional(),
 });
 const updateSchema = createSchema.partial();

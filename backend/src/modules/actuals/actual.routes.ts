@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { prisma } from '../../config/prisma';
-import { NotFoundError } from '../../utils/errors';
+import { ForbiddenError, NotFoundError } from '../../utils/errors';
 import { authenticate } from '../../middleware/auth';
 import { authorize, allowedCostCenterIds, assertCostCenterAccess } from '../../middleware/rbac';
 import { validate } from '../../middleware/validate';
@@ -72,11 +72,18 @@ router.put(
   }),
 );
 
+// Delete: SUPER_ADMIN always; other roles only with the per-user canDeleteActuals grant
 router.delete(
   '/:id',
-  authorize('SUPER_ADMIN', 'HR_ADMIN'),
+  authorize('SUPER_ADMIN', 'HR_ADMIN', 'USER_MASTER'),
   validate({ params: idParamSchema }),
   asyncHandler(async (req, res) => {
+    if (req.user!.role !== 'SUPER_ADMIN' && !req.user!.canDeleteActuals) {
+      throw new ForbiddenError('You are not allowed to delete daily actual entries');
+    }
+    const current = await prisma.manpowerActual.findFirst({ where: { id: req.params.id, deletedAt: null }, select: { costCenterId: true } });
+    if (!current) throw new NotFoundError('Actual entry not found');
+    assertCostCenterAccess(req, current.costCenterId);
     await actualService.remove(req.params.id);
     await auditFromRequest(req, { action: 'DELETE', module: 'ACTUAL', entityType: 'ManpowerActual', entityId: req.params.id });
     return success(res, { message: 'Actual entry deleted' });

@@ -22,7 +22,10 @@ interface ListArgs {
 
 export interface GridRow {
   costCenterId: string;
-  plannedCount: number;
+  dayPlan: number;
+  nightPlan: number;
+  malePlan: number;
+  femalePlan: number;
   remarks?: string | null;
 }
 
@@ -83,8 +86,13 @@ export const planService = {
         unitId: cc.unitId,
         costCode: cc.costCode,
         costCentre: cc.costCentre,
+        department: cc.department ?? null,
         planId: plan?.id ?? null,
         plannedCount: plan?.plannedCount ?? null,
+        dayPlan: plan?.dayPlan ?? null,
+        nightPlan: plan?.nightPlan ?? null,
+        malePlan: plan?.malePlan ?? null,
+        femalePlan: plan?.femalePlan ?? null,
         remarks: plan?.remarks ?? null,
         status: plan?.status ?? null,
         approvedBy: plan?.approvedBy?.name ?? null,
@@ -119,18 +127,32 @@ export const planService = {
         results.errors.push({ row: i + 1, message: 'Unknown cost center' });
         continue;
       }
+      const values = {
+        plannedCount: row.dayPlan + row.nightPlan,
+        dayPlan: row.dayPlan,
+        nightPlan: row.nightPlan,
+        malePlan: row.malePlan,
+        femalePlan: row.femalePlan,
+        remarks: row.remarks,
+      };
       try {
         const existing = await prisma.manpowerPlan.findUnique({
           where: { plan_unique_key: { year, month, costCenterId: row.costCenterId } },
         });
         if (existing && existing.deletedAt === null) {
-          if (existing.plannedCount === row.plannedCount && (existing.remarks ?? '') === (row.remarks ?? '')) {
+          const unchanged =
+            existing.dayPlan === row.dayPlan &&
+            existing.nightPlan === row.nightPlan &&
+            existing.malePlan === row.malePlan &&
+            existing.femalePlan === row.femalePlan &&
+            (existing.remarks ?? '') === (row.remarks ?? '');
+          if (unchanged) {
             results.unchanged++;
             continue;
           }
           const updated = await prisma.manpowerPlan.update({
             where: { id: existing.id },
-            data: { plannedCount: row.plannedCount, remarks: row.remarks, status: PlanStatus.PENDING, deletedAt: null, approvedById: null, approvedAt: null, rejectionRemarks: null },
+            data: { ...values, status: PlanStatus.PENDING, deletedAt: null, approvedById: null, approvedAt: null, rejectionRemarks: null },
           });
           await prisma.planStatusHistory.create({
             data: { planId: updated.id, fromStatus: existing.status, toStatus: PlanStatus.PENDING, actionById: actor.id, remarks: 'Updated — pending approval' },
@@ -139,7 +161,7 @@ export const planService = {
           // previously soft-deleted → revive as pending
           await prisma.manpowerPlan.update({
             where: { id: existing.id },
-            data: { plannedCount: row.plannedCount, remarks: row.remarks, status: PlanStatus.PENDING, deletedAt: null, createdById: actor.id, approvedById: null, approvedAt: null, rejectionRemarks: null },
+            data: { ...values, status: PlanStatus.PENDING, deletedAt: null, createdById: actor.id, approvedById: null, approvedAt: null, rejectionRemarks: null },
           });
           await prisma.planStatusHistory.create({
             data: { planId: existing.id, toStatus: PlanStatus.PENDING, actionById: actor.id, remarks: 'Re-created — pending approval' },
@@ -151,8 +173,7 @@ export const planService = {
               month,
               unitId: cc.unitId,
               costCenterId: row.costCenterId,
-              plannedCount: row.plannedCount,
-              remarks: row.remarks,
+              ...values,
               status: PlanStatus.PENDING,
               createdById: actor.id,
             },
@@ -249,6 +270,10 @@ export const planService = {
             unitId: p.unitId,
             costCenterId: p.costCenterId,
             plannedCount: p.plannedCount,
+            dayPlan: p.dayPlan,
+            nightPlan: p.nightPlan,
+            malePlan: p.malePlan,
+            femalePlan: p.femalePlan,
             remarks: p.remarks,
             status: PlanStatus.PENDING,
             createdById,

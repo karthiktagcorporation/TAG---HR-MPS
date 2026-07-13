@@ -43,6 +43,11 @@ enum PlanStatus {
   REJECTED
 }
 
+enum Shift {
+  DAY
+  NIGHT
+}
+
 enum NotificationType {
   SHORTAGE
   CRITICAL_SHORTAGE
@@ -83,6 +88,8 @@ model User {
   status       MasterStatus @default(ACTIVE)
   roleId       String
   role         Role       @relation(fields: [roleId], references: [id])
+  // Per-user grant: may delete daily actual entries (SUPER_ADMIN always can)
+  canDeleteActuals Boolean @default(false)
 
   lastLoginAt  DateTime?
   createdAt    DateTime   @default(now())
@@ -151,6 +158,8 @@ model Vendor {
   updatedAt     DateTime     @updatedAt
   deletedAt     DateTime?
 
+  actualAllocations ActualVendorAllocation[]
+
   @@index([status])
   @@map("vendors")
 }
@@ -177,6 +186,7 @@ model CostCenter {
   costCode   String
   costCentre String
   unitId     String
+  department String? // optional functional grouping label
   status     MasterStatus @default(ACTIVE)
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
@@ -203,7 +213,11 @@ model ManpowerPlan {
   month        Int // 1-12
   unitId       String
   costCenterId String
-  plannedCount Int
+  plannedCount Int // total = dayPlan + nightPlan
+  dayPlan      Int     @default(0)
+  nightPlan    Int     @default(0)
+  malePlan     Int     @default(0)
+  femalePlan   Int     @default(0)
   remarks      String?
   status       PlanStatus @default(DRAFT)
 
@@ -254,7 +268,11 @@ model ManpowerActual {
   date         DateTime @db.Date
   unitId       String
   costCenterId String
-  actualCount  Int
+  actualCount  Int // total = dayActual + nightActual
+  dayActual    Int      @default(0)
+  nightActual  Int      @default(0)
+  maleActual   Int      @default(0)
+  femaleActual Int      @default(0)
   shortage     Int      @default(0)
   excess       Int      @default(0)
   remarks      String?
@@ -268,11 +286,30 @@ model ManpowerActual {
   costCenter CostCenter @relation(fields: [costCenterId], references: [id])
   createdBy  User       @relation("ActualCreatedBy", fields: [createdById], references: [id])
 
+  vendorAllocations ActualVendorAllocation[]
+
   @@unique([date, costCenterId], name: "actual_unique_key")
   @@index([date])
   @@index([unitId])
   @@index([costCenterId])
   @@map("manpower_actuals")
+}
+
+// Vendor-wise breakdown of a day's actual, per shift.
+// dayActual = sum of DAY rows, nightActual = sum of NIGHT rows (when provided).
+model ActualVendorAllocation {
+  id       String @id @default(cuid())
+  actualId String
+  shift    Shift
+  vendorId String
+  count    Int
+
+  actual ManpowerActual @relation(fields: [actualId], references: [id], onDelete: Cascade)
+  vendor Vendor         @relation(fields: [vendorId], references: [id])
+
+  @@unique([actualId, shift, vendorId])
+  @@index([vendorId])
+  @@map("actual_vendor_allocations")
 }
 
 // ===================== NOTIFICATIONS =====================

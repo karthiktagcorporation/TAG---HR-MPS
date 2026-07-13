@@ -24,6 +24,7 @@ const createSchema = z
     role: roleCode,
     status: masterStatus.optional(),
     costCenterIds: z.array(z.string()).optional().default([]),
+    canDeleteActuals: z.boolean().optional().default(false),
   })
   .refine((d) => d.role !== 'USER_MASTER' || (d.costCenterIds && d.costCenterIds.length > 0), {
     message: 'User Master role requires at least one assigned cost center',
@@ -38,6 +39,7 @@ const updateSchema = z.object({
   role: roleCode.optional(),
   status: masterStatus.optional(),
   costCenterIds: z.array(z.string()).optional(),
+  canDeleteActuals: z.boolean().optional(),
 });
 
 const userInclude = {
@@ -56,6 +58,7 @@ function serialize(u: any) {
     roleName: u.role.name,
     lastLoginAt: u.lastLoginAt,
     createdAt: u.createdAt,
+    canDeleteActuals: u.canDeleteActuals,
     costCenters: u.costCenters.map((c: any) => ({
       id: c.costCenter.id,
       costCode: c.costCenter.costCode,

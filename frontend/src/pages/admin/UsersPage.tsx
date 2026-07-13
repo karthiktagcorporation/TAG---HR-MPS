@@ -14,6 +14,7 @@ import type { RoleCode } from '@/types';
 
 interface UserRow {
   id: string; name: string; username: string; email: string; status: string; role: RoleCode; roleName: string;
+  canDeleteActuals: boolean;
   costCenters: { id: string; costCode: string; costCentre: string; unit: string }[];
 }
 
@@ -48,6 +49,7 @@ export default function UsersPage() {
     { key: 'email', header: 'Email' },
     { key: 'role', header: 'Role', render: (r) => <Badge className="bg-brand-50 text-brand-700 dark:bg-brand-900/40 dark:text-brand-200">{r.roleName}</Badge> },
     { key: 'cc', header: 'Cost Centers', render: (r) => (r.role === 'USER_MASTER' ? `${r.costCenters.length} assigned` : 'All') },
+    { key: 'del', header: 'Can Delete Actuals', render: (r) => (r.role === 'SUPER_ADMIN' ? 'Always' : r.canDeleteActuals ? 'Yes' : 'No') },
     { key: 'status', header: 'Status', render: (r) => <StatusBadge status={r.status} /> },
     {
       key: '_actions', header: 'Actions', align: 'right',
@@ -82,6 +84,7 @@ function UserModal({ editing, onClose, onSaved }: { editing: UserRow | null; onC
   const [form, setForm] = useState({
     name: editing?.name ?? '', username: editing?.username ?? '', email: editing?.email ?? '',
     password: '', role: (editing?.role ?? 'HR_ADMIN') as RoleCode, status: editing?.status ?? 'ACTIVE',
+    canDeleteActuals: editing?.canDeleteActuals ?? false,
     costCenterIds: editing?.costCenters.map((c) => c.id) ?? [] as string[],
   });
 
@@ -115,6 +118,16 @@ function UserModal({ editing, onClose, onSaved }: { editing: UserRow | null; onC
         <div><Label>Role *</Label><Select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as RoleCode })}>{ROLES.map((r) => <option key={r.value} value={r.value}>{r.label}</option>)}</Select></div>
         <div><Label>Status</Label><Select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></Select></div>
       </div>
+
+      {form.role !== 'SUPER_ADMIN' && (
+        <label className="mt-4 flex cursor-pointer items-center gap-2 rounded-lg border border-border p-3 text-sm">
+          <input type="checkbox" checked={form.canDeleteActuals} onChange={(e) => setForm({ ...form, canDeleteActuals: e.target.checked })} />
+          <span>
+            <span className="font-medium">Allow deleting daily actual entries</span>
+            <span className="block text-xs text-muted-foreground">Super Admin can always delete. Grant this to let this user delete entries for their cost centers.</span>
+          </span>
+        </label>
+      )}
 
       {form.role === 'USER_MASTER' && (
         <div className="mt-4">

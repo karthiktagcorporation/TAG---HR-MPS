@@ -1,15 +1,24 @@
 import { z } from 'zod';
 
+export const vendorAllocationSchema = z.object({
+  vendorId: z.string().min(1),
+  count: z.coerce.number().int().min(0),
+});
+
 export const actualRowSchema = z.object({
   date: z.coerce.date(),
   costCenterId: z.string().min(1),
-  actualCount: z.coerce.number().int().min(0, 'Actual count cannot be negative'),
+  dayActual: z.coerce.number().int().min(0).optional(),
+  nightActual: z.coerce.number().int().min(0).optional(),
+  maleActual: z.coerce.number().int().min(0).optional(),
+  femaleActual: z.coerce.number().int().min(0).optional(),
   remarks: z.string().max(500).optional().nullable(),
+  dayVendors: z.array(vendorAllocationSchema).max(50).optional(),
+  nightVendors: z.array(vendorAllocationSchema).max(50).optional(),
 });
 
 export const createActualSchema = actualRowSchema;
 export const updateActualSchema = z.object({
-  actualCount: z.coerce.number().int().min(0).optional(),
   remarks: z.string().max(500).optional().nullable(),
 });
 

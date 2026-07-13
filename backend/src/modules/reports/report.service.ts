@@ -204,26 +204,89 @@ export const reportService = {
   },
 
   async monthlySummary(f: ReportFilters) {
-    const plan = await prisma.manpowerPlan.aggregate({ where: planWhere(f), _sum: { plannedCount: true } });
-    const actual = await prisma.manpowerActual.aggregate({ where: actualWhere(f), _sum: { actualCount: true, shortage: true, excess: true } });
-    const rows = [
-      {
-        period: `${f.month}/${f.year}`,
-        planned: plan._sum.plannedCount ?? 0,
-        actual: actual._sum.actualCount ?? 0,
-        shortage: actual._sum.shortage ?? 0,
-        excess: actual._sum.excess ?? 0,
-      },
-    ];
+    // One row per cost center with day/night/gender split + a grand total row.
+    const [plans, actuals] = await Promise.all([
+      prisma.manpowerPlan.findMany({ where: planWhere(f), include: { costCenter: { include: { unit: true } } } }),
+      prisma.manpowerActual.groupBy({
+        by: ['costCenterId'],
+        where: actualWhere(f),
+        _sum: { actualCount: true, dayActual: true, nightActual: true, maleActual: true, femaleActual: true, shortage: true, excess: true },
+      }),
+    ]);
+    const actualMap = new Map(actuals.map((a) => [a.costCenterId, a._sum]));
+    // include cost centers that have actuals but no approved plan
+    const planCcIds = new Set(plans.map((p) => p.costCenterId));
+    const orphanIds = actuals.map((a) => a.costCenterId).filter((id) => !planCcIds.has(id));
+    const orphanCcs = orphanIds.length
+      ? await prisma.costCenter.findMany({ where: { id: { in: orphanIds } }, include: { unit: true } })
+      : [];
+
+    type Row = {
+      unit: string; costCode: string; costCentre: string;
+      dayPlan: number; nightPlan: number; planned: number;
+      dayActual: number; nightActual: number; actual: number;
+      male: number; female: number; shortage: number; excess: number;
+    };
+    const rows: Row[] = [];
+    for (const p of plans) {
+      const a = actualMap.get(p.costCenterId);
+      rows.push({
+        unit: p.costCenter.unit.code,
+        costCode: p.costCenter.costCode,
+        costCentre: p.costCenter.costCentre,
+        dayPlan: p.dayPlan,
+        nightPlan: p.nightPlan,
+        planned: p.plannedCount,
+        dayActual: a?.dayActual ?? 0,
+        nightActual: a?.nightActual ?? 0,
+        actual: a?.actualCount ?? 0,
+        male: a?.maleActual ?? 0,
+        female: a?.femaleActual ?? 0,
+        shortage: a?.shortage ?? 0,
+        excess: a?.excess ?? 0,
+      });
+    }
+    for (const cc of orphanCcs) {
+      const a = actualMap.get(cc.id)!;
+      rows.push({
+        unit: cc.unit.code, costCode: cc.costCode, costCentre: cc.costCentre,
+        dayPlan: 0, nightPlan: 0, planned: 0,
+        dayActual: a.dayActual ?? 0, nightActual: a.nightActual ?? 0, actual: a.actualCount ?? 0,
+        male: a.maleActual ?? 0, female: a.femaleActual ?? 0,
+        shortage: a.shortage ?? 0, excess: a.excess ?? 0,
+      });
+    }
+    rows.sort((x, y) => x.unit.localeCompare(y.unit) || x.costCode.localeCompare(y.costCode));
+    if (rows.length) {
+      const total = rows.reduce(
+        (t, r) => ({
+          unit: 'TOTAL', costCode: '', costCentre: `${f.month}/${f.year}`,
+          dayPlan: t.dayPlan + r.dayPlan, nightPlan: t.nightPlan + r.nightPlan, planned: t.planned + r.planned,
+          dayActual: t.dayActual + r.dayActual, nightActual: t.nightActual + r.nightActual, actual: t.actual + r.actual,
+          male: t.male + r.male, female: t.female + r.female,
+          shortage: t.shortage + r.shortage, excess: t.excess + r.excess,
+        }),
+        { unit: 'TOTAL', costCode: '', costCentre: `${f.month}/${f.year}`, dayPlan: 0, nightPlan: 0, planned: 0, dayActual: 0, nightActual: 0, actual: 0, male: 0, female: 0, shortage: 0, excess: 0 },
+      );
+      rows.push(total);
+    }
     return {
       columns: [
-        { key: 'period', label: 'Period' },
-        { key: 'planned', label: 'Planned' },
-        { key: 'actual', label: 'Actual (period sum)' },
+        { key: 'unit', label: 'Unit' },
+        { key: 'costCode', label: 'Cost Code' },
+        { key: 'costCentre', label: 'Cost Centre' },
+        { key: 'dayPlan', label: 'Day Plan' },
+        { key: 'nightPlan', label: 'Night Plan' },
+        { key: 'planned', label: 'Total Plan' },
+        { key: 'dayActual', label: 'Day Actual' },
+        { key: 'nightActual', label: 'Night Actual' },
+        { key: 'actual', label: 'Total Actual' },
+        { key: 'male', label: 'Male' },
+        { key: 'female', label: 'Female' },
         { key: 'shortage', label: 'Shortage' },
         { key: 'excess', label: 'Excess' },
       ],
-      rows,
+      rows: this.applySearch(rows, f.search),
     };
   },
 
