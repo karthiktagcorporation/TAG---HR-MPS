@@ -188,6 +188,7 @@ export const planService = {
     const existing = await prisma.manpowerPlan.findFirst({ where: { id, deletedAt: null } });
     if (!existing) throw new NotFoundError('Plan not found');
     await prisma.manpowerPlan.update({ where: { id }, data: { deletedAt: new Date() } });
+    if (existing.status === PlanStatus.PENDING) await notificationService.autoClearPendingApproval();
   },
 
   async transition(id: string, to: PlanStatus, actionById: string, remarks?: string) {
@@ -220,6 +221,7 @@ export const planService = {
     if (to === PlanStatus.APPROVED || plan.status === PlanStatus.APPROVED) {
       await actualService.recomputeMonth(plan.year, plan.month);
     }
+    await notificationService.autoClearPendingApproval();
     return updated;
   },
 
@@ -242,6 +244,7 @@ export const planService = {
       ]);
     }
     if (to === 'APPROVED') await actualService.recomputeMonth(year, month);
+    await notificationService.autoClearPendingApproval();
     return { count: pending.length, to };
   },
 

@@ -23,6 +23,15 @@ export const notificationService = {
     await prisma.notification.updateMany({ where: { OR: [{ userId }, { roleCode: role }], isRead: false }, data: { isRead: true, readAt: new Date() } });
   },
 
+  /** If no manpower plans are pending anymore, auto-clear any unread pending-approval notifications. */
+  async autoClearPendingApproval() {
+    const pending = await prisma.manpowerPlan.count({ where: { status: 'PENDING', deletedAt: null } });
+    if (pending === 0) {
+      await prisma.notification.updateMany({ where: { type: 'PENDING_APPROVAL', isRead: false }, data: { isRead: true, readAt: new Date() } });
+    }
+    return { pending };
+  },
+
   async create(data: {
     title: string;
     message: string;

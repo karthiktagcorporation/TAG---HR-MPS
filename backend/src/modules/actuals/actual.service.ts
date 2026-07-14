@@ -12,7 +12,8 @@ const include = {
 
 export interface VendorAllocationInput {
   vendorId: string;
-  count: number;
+  male: number;
+  female: number;
 }
 
 /**
@@ -36,9 +37,15 @@ export async function computeVariance(date: Date, costCenterId: string, actualCo
   };
 }
 
-function sumAllocations(rows: VendorAllocationInput[] | undefined) {
-  if (!rows || rows.length === 0) return null;
-  return rows.reduce((sum, r) => sum + r.count, 0);
+function cleanVendors(rows: VendorAllocationInput[] | undefined) {
+  return (rows ?? []).filter((r) => r.vendorId && (r.male > 0 || r.female > 0));
+}
+
+function sumShift(rows: VendorAllocationInput[]) {
+  return rows.reduce(
+    (acc, r) => ({ male: acc.male + r.male, female: acc.female + r.female }),
+    { male: 0, female: 0 },
+  );
 }
 
 interface ListArgs {
@@ -109,7 +116,7 @@ export const actualService = {
       const allocationsFor = (shift: Shift) =>
         (actual?.vendorAllocations ?? [])
           .filter((v) => v.shift === shift)
-          .map((v) => ({ vendorId: v.vendorId, vendorName: v.vendor.vendorName, count: v.count }));
+          .map((v) => ({ vendorId: v.vendorId, vendorName: v.vendor.vendorName, male: v.male, female: v.female, count: v.count }));
       return {
         costCenterId: cc.id,
         unit: cc.unit.code,
@@ -136,17 +143,13 @@ export const actualService = {
   },
 
   /**
-   * Upsert one day+cost-center entry.
-   * If vendor allocations are given for a shift, that shift's actual is the sum
-   * of the allocation counts (the numbers must reconcile by construction).
+   * Upsert one day+cost-center entry. Vendor breakdown is mandatory: the
+   * day/night/male/female totals are always derived from the vendor rows —
+   * there is no way to record an actual without naming at least one vendor.
    */
   async upsert(input: {
     date: Date;
     costCenterId: string;
-    dayActual?: number;
-    nightActual?: number;
-    maleActual?: number;
-    femaleActual?: number;
     remarks?: string | null;
     dayVendors?: VendorAllocationInput[];
     nightVendors?: VendorAllocationInput[];
@@ -154,10 +157,18 @@ export const actualService = {
   }) {
     const cc = await prisma.costCenter.findFirst({ where: { id: input.costCenterId, deletedAt: null } });
     if (!cc) throw new BadRequestError('Unknown cost center');
-    const date = new Date(Date.UTC(input.date.getUTCFullYear(), input.date.getUTCMonth(), input.date.getUTCDate()));
 
-    const dayActual = sumAllocations(input.dayVendors) ?? input.dayActual ?? 0;
-    const nightActual = sumAllocations(input.nightVendors) ?? input.nightActual ?? 0;
+    const dayVendors = cleanVendors(input.dayVendors);
+    const nightVendors = cleanVendors(input.nightVendors);
+    if (dayVendors.length === 0 && nightVendors.length === 0) {
+      throw new BadRequestError('At least one vendor entry (day or night shift) is required to save an actual entry');
+    }
+
+    const date = new Date(Date.UTC(input.date.getUTCFullYear(), input.date.getUTCMonth(), input.date.getUTCDate()));
+    const daySum = sumShift(dayVendors);
+    const nightSum = sumShift(nightVendors);
+    const dayActual = daySum.male + daySum.female;
+    const nightActual = nightSum.male + nightSum.female;
     const actualCount = dayActual + nightActual;
     const variance = await computeVariance(date, input.costCenterId, actualCount);
 
@@ -165,8 +176,8 @@ export const actualService = {
       actualCount,
       dayActual,
       nightActual,
-      maleActual: input.maleActual ?? 0,
-      femaleActual: input.femaleActual ?? 0,
+      maleActual: daySum.male + nightSum.male,
+      femaleActual: daySum.female + nightSum.female,
       shortage: variance.shortage,
       excess: variance.excess,
       remarks: input.remarks,
@@ -184,18 +195,13 @@ export const actualService = {
       },
     });
 
-    // Replace vendor allocations when the caller provided them (undefined = leave as-is)
-    if (input.dayVendors !== undefined || input.nightVendors !== undefined) {
-      const shifts: Shift[] = [];
-      if (input.dayVendors !== undefined) shifts.push('DAY');
-      if (input.nightVendors !== undefined) shifts.push('NIGHT');
-      await prisma.actualVendorAllocation.deleteMany({ where: { actualId: actual.id, shift: { in: shifts } } });
-      const rows = [
-        ...(input.dayVendors ?? []).map((v) => ({ actualId: actual.id, shift: 'DAY' as Shift, vendorId: v.vendorId, count: v.count })),
-        ...(input.nightVendors ?? []).map((v) => ({ actualId: actual.id, shift: 'NIGHT' as Shift, vendorId: v.vendorId, count: v.count })),
-      ].filter((r) => r.count > 0);
-      if (rows.length) await prisma.actualVendorAllocation.createMany({ data: rows });
-    }
+    // Vendor allocations are always a full replacement of both shifts.
+    await prisma.actualVendorAllocation.deleteMany({ where: { actualId: actual.id } });
+    const rows = [
+      ...dayVendors.map((v) => ({ actualId: actual.id, shift: 'DAY' as Shift, vendorId: v.vendorId, male: v.male, female: v.female, count: v.male + v.female })),
+      ...nightVendors.map((v) => ({ actualId: actual.id, shift: 'NIGHT' as Shift, vendorId: v.vendorId, male: v.male, female: v.female, count: v.male + v.female })),
+    ];
+    if (rows.length) await prisma.actualVendorAllocation.createMany({ data: rows });
 
     return prisma.manpowerActual.findUniqueOrThrow({ where: { id: actual.id }, include });
   },
@@ -217,10 +223,6 @@ export const actualService = {
     rows: {
       date: string | Date;
       costCenterId: string;
-      dayActual?: number;
-      nightActual?: number;
-      maleActual?: number;
-      femaleActual?: number;
       remarks?: string | null;
       dayVendors?: VendorAllocationInput[];
       nightVendors?: VendorAllocationInput[];

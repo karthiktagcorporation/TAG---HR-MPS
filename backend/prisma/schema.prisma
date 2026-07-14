@@ -300,7 +300,9 @@ model ActualVendorAllocation {
   actualId String
   shift    Shift
   vendorId String
-  count    Int
+  count    Int // = male + female
+  male     Int @default(0)
+  female   Int @default(0)
 
   actual ManpowerActual @relation(fields: [actualId], references: [id], onDelete: Cascade)
   vendor Vendor         @relation(fields: [vendorId], references: [id])

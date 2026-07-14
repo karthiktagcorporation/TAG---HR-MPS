@@ -6,7 +6,7 @@ import { Download, Plus, Save, Trash2, Upload, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader } from '@/components/PageHeader';
 import { FilterBar } from '@/components/FilterBar';
-import { Badge, Button, Card, Input, Label, Modal, Select } from '@/components/ui';
+import { Badge, Button, Card, Input, Modal, Select } from '@/components/ui';
 import { LoadingState } from '@/components/States';
 import { apiErrorMessage } from '@/services/api';
 import { actualApi } from '@/services/resources';
@@ -15,19 +15,17 @@ import { useUnits, useVendors } from '@/hooks/useMasters';
 import type { ActualGridRow, VendorAllocation } from '@/types';
 
 interface Edit {
-  dayActual: number;
-  nightActual: number;
-  maleActual: number;
-  femaleActual: number;
   remarks: string;
   dayVendors: VendorAllocation[];
   nightVendors: VendorAllocation[];
 }
 
 const n = (v: number | null | undefined) => (v === null || v === undefined || Number.isNaN(v) ? 0 : v);
-const vendorSum = (rows: VendorAllocation[]) => rows.reduce((s, r) => s + n(r.count), 0);
+const shiftTotal = (rows: VendorAllocation[]) => rows.reduce((s, r) => s + n(r.male) + n(r.female), 0);
+const shiftMale = (rows: VendorAllocation[]) => rows.reduce((s, r) => s + n(r.male), 0);
+const shiftFemale = (rows: VendorAllocation[]) => rows.reduce((s, r) => s + n(r.female), 0);
 const sameVendors = (a: VendorAllocation[], b: VendorAllocation[]) =>
-  a.length === b.length && a.every((x, i) => x.vendorId === b[i].vendorId && x.count === b[i].count);
+  a.length === b.length && a.every((x, i) => x.vendorId === b[i].vendorId && x.male === b[i].male && x.female === b[i].female);
 
 export default function ActualsPage() {
   const { user, hasRole } = useAuth();
@@ -38,6 +36,7 @@ export default function ActualsPage() {
   const [vendorEditor, setVendorEditor] = useState<{ row: ActualGridRow; shift: 'DAY' | 'NIGHT' } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const { data: units = [] } = useUnits();
+  const { data: vendors = [] } = useVendors();
 
   const canEnter = hasRole('SUPER_ADMIN', 'HR_ADMIN', 'USER_MASTER');
   const canDelete = user?.role === 'SUPER_ADMIN' || !!user?.canDeleteActuals;
@@ -50,10 +49,6 @@ export default function ActualsPage() {
   const invalidate = () => qc.invalidateQueries({ queryKey: ['actual-grid'] });
 
   const baseFor = (row: ActualGridRow): Edit => ({
-    dayActual: n(row.dayActual),
-    nightActual: n(row.nightActual),
-    maleActual: n(row.maleActual),
-    femaleActual: n(row.femaleActual),
     remarks: row.remarks ?? '',
     dayVendors: row.dayVendors ?? [],
     nightVendors: row.nightVendors ?? [],
@@ -63,40 +58,32 @@ export default function ActualsPage() {
     const e = edits[row.costCenterId];
     if (!e) return false;
     const b = baseFor(row);
-    return (
-      e.dayActual !== b.dayActual || e.nightActual !== b.nightActual ||
-      e.maleActual !== b.maleActual || e.femaleActual !== b.femaleActual ||
-      e.remarks !== b.remarks ||
-      !sameVendors(e.dayVendors, b.dayVendors) || !sameVendors(e.nightVendors, b.nightVendors)
-    );
+    return e.remarks !== b.remarks || !sameVendors(e.dayVendors, b.dayVendors) || !sameVendors(e.nightVendors, b.nightVendors);
   };
   const setEdit = (row: ActualGridRow, patch: Partial<Edit>) =>
     setEdits((prev) => ({ ...prev, [row.costCenterId]: { ...editFor(row), ...patch } }));
 
-  const editedRows = useMemo(
-    () =>
-      rows
-        .filter((r) => isDirty(r))
-        .map((r) => {
-          const e = edits[r.costCenterId];
-          return {
-            date,
-            costCenterId: r.costCenterId,
-            dayActual: e.dayActual,
-            nightActual: e.nightActual,
-            maleActual: e.maleActual,
-            femaleActual: e.femaleActual,
-            remarks: e.remarks || null,
-            dayVendors: e.dayVendors.filter((v) => v.vendorId && v.count > 0),
-            nightVendors: e.nightVendors.filter((v) => v.vendorId && v.count > 0),
-          };
-        }),
+  const editedRows = useMemo(() => {
+    const skippedNoVendor: string[] = [];
+    const out = rows
+      .filter((r) => isDirty(r))
+      .map((r) => {
+        const e = edits[r.costCenterId];
+        const dayVendors = e.dayVendors.filter((v) => v.vendorId && (v.male > 0 || v.female > 0)).map((v) => ({ vendorId: v.vendorId, male: v.male, female: v.female }));
+        const nightVendors = e.nightVendors.filter((v) => v.vendorId && (v.male > 0 || v.female > 0)).map((v) => ({ vendorId: v.vendorId, male: v.male, female: v.female }));
+        if (dayVendors.length === 0 && nightVendors.length === 0) {
+          skippedNoVendor.push(r.costCode);
+          return null;
+        }
+        return { date, costCenterId: r.costCenterId, remarks: e.remarks || null, dayVendors, nightVendors };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+    return { rows: out, skippedNoVendor };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [rows, edits, date],
-  );
+  }, [rows, edits, date]);
 
   const saveMut = useMutation({
-    mutationFn: () => actualApi.bulk(editedRows),
+    mutationFn: () => actualApi.bulk(editedRows.rows),
     onSuccess: (r) => {
       toast.success(`Saved ${r.saved} entr${r.saved === 1 ? 'y' : 'ies'} — variance auto-calculated`);
       if (r.errors.length) toast.error(`${r.errors.length} row(s) failed: ${r.errors[0].message}`);
@@ -112,10 +99,18 @@ export default function ActualsPage() {
     onError: (e) => toast.error(apiErrorMessage(e)),
   });
 
+  const handleSave = () => {
+    if (editedRows.skippedNoVendor.length) {
+      toast.error(`Add at least one vendor before saving: ${editedRows.skippedNoVendor.join(', ')}`);
+      if (!editedRows.rows.length) return;
+    }
+    saveMut.mutate();
+  };
+
   // live variance preview against total plan
   const previewVariance = (row: ActualGridRow) => {
     const e = editFor(row);
-    const total = e.dayActual + e.nightActual;
+    const total = shiftTotal(e.dayVendors) + shiftTotal(e.nightVendors);
     if (!isDirty(row) && row.actualId === null) return { shortage: null, excess: null };
     return { shortage: Math.max(row.planned - total, 0), excess: Math.max(total - row.planned, 0) };
   };
@@ -125,7 +120,7 @@ export default function ActualsPage() {
     for (const r of rows) {
       planned += r.planned;
       const e = edits[r.costCenterId];
-      const total = e ? e.dayActual + e.nightActual : n(r.actualCount);
+      const total = e ? shiftTotal(e.dayVendors) + shiftTotal(e.nightVendors) : n(r.actualCount);
       const hasEntry = e ? true : r.actualId !== null;
       if (hasEntry) {
         actual += total;
@@ -146,14 +141,16 @@ export default function ActualsPage() {
       'Cost Centre': r.costCentre,
       'Day Plan': r.dayPlan,
       'Night Plan': r.nightPlan,
-      'Day Actual': r.dayActual ?? '',
-      'Night Actual': r.nightActual ?? '',
-      Male: r.maleActual ?? '',
-      Female: r.femaleActual ?? '',
+      'Day Vendor': '',
+      'Day Male': '',
+      'Day Female': '',
+      'Night Vendor': '',
+      'Night Male': '',
+      'Night Female': '',
       Remarks: r.remarks ?? '',
     }));
     const ws = XLSX.utils.json_to_sheet(data);
-    ws['!cols'] = [{ wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 30 }, { wch: 9 }, { wch: 10 }, { wch: 10 }, { wch: 11 }, { wch: 8 }, { wch: 8 }, { wch: 26 }];
+    ws['!cols'] = [{ wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 28 }, { wch: 9 }, { wch: 10 }, { wch: 16 }, { wch: 9 }, { wch: 10 }, { wch: 16 }, { wch: 9 }, { wch: 10 }, { wch: 24 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Actual');
     XLSX.writeFile(wb, `daily-actual-${date}.xlsx`);
@@ -167,36 +164,31 @@ export default function ActualsPage() {
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const parsed = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
         const byKey = new Map(rows.map((r) => [`${r.unit}|${r.costCode}`.toUpperCase(), r]));
+        const vendorByName = new Map(vendors.map((v) => [v.vendorName.trim().toUpperCase(), v.id]));
         let matched = 0;
         let skipped = 0;
         const next: Record<string, Edit> = { ...edits };
-        const readNum = (p: Record<string, unknown>, keys: string[]) => {
-          for (const k of keys) {
-            if (p[k] !== undefined && p[k] !== '') {
-              const num = Number(p[k]);
-              if (!Number.isNaN(num) && num >= 0) return Math.round(num);
-            }
-          }
-          return 0;
+        const readNum = (p: Record<string, unknown>, key: string) => {
+          const num = Number(p[key]);
+          return !Number.isNaN(num) && num >= 0 ? Math.round(num) : 0;
         };
         for (const p of parsed) {
           const unit = String(p.Unit ?? p.unit ?? '').trim().toUpperCase();
           const code = String(p['Cost Code'] ?? p.CostCode ?? p.costCode ?? '').trim().toUpperCase();
           const row = byKey.get(`${unit}|${code}`);
           if (!row) { skipped++; continue; }
-          next[row.costCenterId] = {
-            dayActual: readNum(p, ['Day Actual', 'DayActual', 'Day', 'day']),
-            nightActual: readNum(p, ['Night Actual', 'NightActual', 'Night', 'night']),
-            maleActual: readNum(p, ['Male', 'male']),
-            femaleActual: readNum(p, ['Female', 'female']),
-            remarks: String(p.Remarks ?? p.remarks ?? ''),
-            dayVendors: [],
-            nightVendors: [],
-          };
+          const dayVendorName = String(p['Day Vendor'] ?? '').trim().toUpperCase();
+          const nightVendorName = String(p['Night Vendor'] ?? '').trim().toUpperCase();
+          const dayVendorId = vendorByName.get(dayVendorName);
+          const nightVendorId = vendorByName.get(nightVendorName);
+          const dayVendors = dayVendorId ? [{ vendorId: dayVendorId, male: readNum(p, 'Day Male'), female: readNum(p, 'Day Female') }] : [];
+          const nightVendors = nightVendorId ? [{ vendorId: nightVendorId, male: readNum(p, 'Night Male'), female: readNum(p, 'Night Female') }] : [];
+          if (!dayVendors.length && !nightVendors.length) { skipped++; continue; }
+          next[row.costCenterId] = { remarks: String(p.Remarks ?? p.remarks ?? ''), dayVendors, nightVendors };
           matched++;
         }
         setEdits(next);
-        toast.success(`Imported ${matched} row(s)${skipped ? `, ${skipped} skipped` : ''}. Review and click Save.`);
+        toast.success(`Imported ${matched} row(s)${skipped ? `, ${skipped} skipped (vendor name must match master)` : ''}. Review and click Save.`);
       } catch {
         toast.error('Could not read the Excel file');
       }
@@ -206,30 +198,23 @@ export default function ActualsPage() {
 
   const shiftCell = (row: ActualGridRow, shift: 'DAY' | 'NIGHT') => {
     const e = editFor(row);
-    const vendors = shift === 'DAY' ? e.dayVendors : e.nightVendors;
-    const value = shift === 'DAY' ? e.dayActual : e.nightActual;
-    const locked = vendors.length > 0; // total comes from vendor breakdown
+    const vendorRows = shift === 'DAY' ? e.dayVendors : e.nightVendors;
+    const total = shiftTotal(vendorRows);
     return (
-      <div className="flex items-center justify-end gap-1">
-        <Input
-          type="number"
-          min={0}
-          className="w-20 text-right"
-          value={value}
-          disabled={!canEnter || locked}
-          title={locked ? 'Total comes from the vendor breakdown' : undefined}
-          onChange={(ev) => setEdit(row, { [shift === 'DAY' ? 'dayActual' : 'nightActual']: ev.target.value === '' ? 0 : Number(ev.target.value) } as Partial<Edit>)}
-        />
-        {canEnter && (
+      <div className="flex items-center justify-end gap-1.5">
+        <span className={`w-10 text-right tabular-nums ${total > 0 ? 'font-semibold' : 'text-muted-foreground'}`}>{total}</span>
+        {canEnter ? (
           <Button
             variant="ghost"
             size="icon"
-            className={vendors.length ? 'text-brand-600' : 'text-muted-foreground'}
-            title={vendors.length ? `${vendors.length} vendor(s): ${vendors.map((v) => `${v.vendorName ?? ''} ${v.count}`).join(', ')}` : 'Vendor-wise breakdown'}
+            className={vendorRows.length ? 'text-brand-600' : 'text-muted-foreground'}
+            title={vendorRows.length ? `${vendorRows.length} vendor(s): ${vendorRows.map((v) => `${v.vendorName ?? ''} (M${v.male}/F${v.female})`).join(', ')}` : 'Add vendor breakdown (required)'}
             onClick={() => setVendorEditor({ row, shift })}
           >
             <Users className="h-4 w-4" />
           </Button>
+        ) : (
+          <Users className="h-4 w-4 text-muted-foreground/40" />
         )}
       </div>
     );
@@ -239,7 +224,7 @@ export default function ActualsPage() {
     <div>
       <PageHeader
         title="Daily Actual Entry"
-        subtitle="Day/night actual per cost center with vendor-wise breakdown — shortage / excess auto-calculated against the approved plan"
+        subtitle="Vendor-wise day/night actual with male/female split — a vendor is required to save any entry"
         breadcrumbs={['Operations', 'Daily Actual']}
         actions={
           <div className="flex flex-wrap gap-2">
@@ -248,8 +233,8 @@ export default function ActualsPage() {
               <>
                 <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) importFile(f); e.target.value = ''; }} />
                 <Button variant="outline" onClick={() => fileRef.current?.click()}><Upload className="h-4 w-4" /> Import Excel</Button>
-                <Button onClick={() => saveMut.mutate()} disabled={!editedRows.length || saveMut.isPending}>
-                  <Save className="h-4 w-4" /> {saveMut.isPending ? 'Saving...' : `Save (${editedRows.length})`}
+                <Button onClick={handleSave} disabled={(!editedRows.rows.length && !editedRows.skippedNoVendor.length) || saveMut.isPending}>
+                  <Save className="h-4 w-4" /> {saveMut.isPending ? 'Saving...' : `Save (${editedRows.rows.length})`}
                 </Button>
               </>
             )}
@@ -297,6 +282,9 @@ export default function ActualsPage() {
                 {rows.map((r) => {
                   const e = editFor(r);
                   const v = previewVariance(r);
+                  const male = shiftMale(e.dayVendors) + shiftMale(e.nightVendors);
+                  const female = shiftFemale(e.dayVendors) + shiftFemale(e.nightVendors);
+                  const needsVendor = isDirty(r) && e.dayVendors.length === 0 && e.nightVendors.length === 0;
                   return (
                     <tr key={r.costCenterId} className={`border-b border-border last:border-0 ${isDirty(r) ? 'bg-amber-50 dark:bg-amber-950/20' : ''}`}>
                       <td className="px-3 py-2 font-medium">{r.unit}</td>
@@ -308,14 +296,8 @@ export default function ActualsPage() {
                       <td className="px-3 py-2 text-right">{r.nightPlan}</td>
                       <td className="px-3 py-2">{shiftCell(r, 'DAY')}</td>
                       <td className="px-3 py-2">{shiftCell(r, 'NIGHT')}</td>
-                      <td className="px-3 py-2 text-right">
-                        <Input type="number" min={0} className="ml-auto w-16 text-right" value={e.maleActual} disabled={!canEnter}
-                          onChange={(ev) => setEdit(r, { maleActual: ev.target.value === '' ? 0 : Number(ev.target.value) })} />
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        <Input type="number" min={0} className="ml-auto w-16 text-right" value={e.femaleActual} disabled={!canEnter}
-                          onChange={(ev) => setEdit(r, { femaleActual: ev.target.value === '' ? 0 : Number(ev.target.value) })} />
-                      </td>
+                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{male}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{female}</td>
                       <td className="px-3 py-2 text-right">
                         {v.shortage && v.shortage > 0 ? <Badge className="bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">{v.shortage}</Badge> : '—'}
                       </td>
@@ -324,6 +306,7 @@ export default function ActualsPage() {
                       </td>
                       <td className="px-3 py-2">
                         <Input className="min-w-24" value={e.remarks} disabled={!canEnter} onChange={(ev) => setEdit(r, { remarks: ev.target.value })} />
+                        {needsVendor && <span className="mt-0.5 block text-[11px] text-red-600">Add a vendor to save</span>}
                       </td>
                       {canDelete && (
                         <td className="px-3 py-2 text-right">
@@ -353,10 +336,9 @@ export default function ActualsPage() {
           shift={vendorEditor.shift}
           initial={vendorEditor.shift === 'DAY' ? editFor(vendorEditor.row).dayVendors : editFor(vendorEditor.row).nightVendors}
           onClose={() => setVendorEditor(null)}
-          onSave={(vendors) => {
-            const total = vendorSum(vendors);
-            if (vendorEditor.shift === 'DAY') setEdit(vendorEditor.row, { dayVendors: vendors, dayActual: vendors.length ? total : editFor(vendorEditor.row).dayActual });
-            else setEdit(vendorEditor.row, { nightVendors: vendors, nightActual: vendors.length ? total : editFor(vendorEditor.row).nightActual });
+          onSave={(vendorRows) => {
+            if (vendorEditor.shift === 'DAY') setEdit(vendorEditor.row, { dayVendors: vendorRows });
+            else setEdit(vendorEditor.row, { nightVendors: vendorRows });
             setVendorEditor(null);
           }}
         />
@@ -375,21 +357,25 @@ function VendorAllocationModal({
   onSave: (vendors: VendorAllocation[]) => void;
 }) {
   const { data: vendors = [] } = useVendors();
-  const [items, setItems] = useState<VendorAllocation[]>(initial.length ? initial.map((v) => ({ ...v })) : [{ vendorId: '', count: 0 }]);
+  const [items, setItems] = useState<VendorAllocation[]>(
+    initial.length ? initial.map((v) => ({ ...v })) : [{ vendorId: '', male: 0, female: 0 }],
+  );
 
   const vendorName = (id: string) => vendors.find((v) => v.id === id)?.vendorName ?? '';
   const setItem = (i: number, patch: Partial<VendorAllocation>) =>
     setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
   const removeItem = (i: number) => setItems((prev) => prev.filter((_, idx) => idx !== i));
   const usedIds = new Set(items.map((i) => i.vendorId));
-  const total = vendorSum(items.filter((i) => i.vendorId));
+  const cleanItems = items.filter((i) => i.vendorId && (i.male > 0 || i.female > 0));
+  const totalMale = cleanItems.reduce((s, i) => s + n(i.male), 0);
+  const totalFemale = cleanItems.reduce((s, i) => s + n(i.female), 0);
+  const total = totalMale + totalFemale;
   const planned = shift === 'DAY' ? row.dayPlan : row.nightPlan;
 
   const save = () => {
-    const clean = items.filter((i) => i.vendorId && i.count > 0).map((i) => ({ ...i, vendorName: vendorName(i.vendorId) }));
-    const ids = clean.map((c) => c.vendorId);
+    const ids = cleanItems.map((c) => c.vendorId);
     if (new Set(ids).size !== ids.length) return toast.error('The same vendor is listed twice');
-    onSave(clean);
+    onSave(cleanItems.map((i) => ({ vendorId: i.vendorId, vendorName: vendorName(i.vendorId), male: i.male, female: i.female })));
   };
 
   return (
@@ -398,30 +384,33 @@ function VendorAllocationModal({
         {row.unit} · {row.costCode} — {row.costCentre} · planned {planned}
       </p>
       <div className="space-y-2">
+        <div className="grid grid-cols-[1fr_5rem_5rem_2.5rem] gap-2 px-1 text-xs font-medium text-muted-foreground">
+          <span>Vendor</span><span className="text-right">Male</span><span className="text-right">Female</span><span />
+        </div>
         {items.map((it, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <Select value={it.vendorId} onChange={(e) => setItem(i, { vendorId: e.target.value })} className="flex-1">
+          <div key={i} className="grid grid-cols-[1fr_5rem_5rem_2.5rem] items-center gap-2">
+            <Select value={it.vendorId} onChange={(e) => setItem(i, { vendorId: e.target.value })}>
               <option value="">Select vendor...</option>
               {vendors
                 .filter((v) => v.id === it.vendorId || !usedIds.has(v.id))
                 .map((v) => <option key={v.id} value={v.id}>{v.vendorName}</option>)}
             </Select>
-            <Input
-              type="number" min={0} className="w-24 text-right" placeholder="Count"
-              value={it.count || ''}
-              onChange={(e) => setItem(i, { count: e.target.value === '' ? 0 : Number(e.target.value) })}
-            />
+            <Input type="number" min={0} className="text-right" value={it.male || ''} placeholder="0"
+              onChange={(e) => setItem(i, { male: e.target.value === '' ? 0 : Number(e.target.value) })} />
+            <Input type="number" min={0} className="text-right" value={it.female || ''} placeholder="0"
+              onChange={(e) => setItem(i, { female: e.target.value === '' ? 0 : Number(e.target.value) })} />
             <Button variant="ghost" size="icon" className="text-red-600" onClick={() => removeItem(i)}><Trash2 className="h-4 w-4" /></Button>
           </div>
         ))}
       </div>
-      <Button variant="outline" className="mt-3" onClick={() => setItems((prev) => [...prev, { vendorId: '', count: 0 }])}>
+      <Button variant="outline" className="mt-3" onClick={() => setItems((prev) => [...prev, { vendorId: '', male: 0, female: 0 }])}>
         <Plus className="h-4 w-4" /> Add Vendor
       </Button>
       <div className="mt-4 flex items-center justify-between border-t border-border pt-3">
         <div className="text-sm">
-          <span className="text-muted-foreground">Total {shift.toLowerCase()} actual: </span>
+          <span className="text-muted-foreground">Total {shift.toLowerCase()}: </span>
           <b>{total}</b>
+          <span className="ml-1.5 text-xs text-muted-foreground">(M {totalMale} / F {totalFemale})</span>
           {planned > 0 && total !== planned && (
             <span className={`ml-2 text-xs ${total < planned ? 'text-red-600' : 'text-amber-600'}`}>
               ({total < planned ? `${planned - total} short of` : `${total - planned} over`} plan)
@@ -434,7 +423,7 @@ function VendorAllocationModal({
         </div>
       </div>
       <p className="mt-2 text-xs text-muted-foreground">
-        The shift's actual becomes the sum of the vendor counts. Remove all vendors to type the total manually.
+        At least one vendor (day or night) is required to save an actual entry. This shift's total is the sum of the male + female counts entered per vendor.
       </p>
     </Modal>
   );

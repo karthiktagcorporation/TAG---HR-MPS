@@ -104,11 +104,14 @@ export interface ManpowerActual {
   costCenter?: CostCenter;
 }
 
-/** Vendor-wise count for one shift of a daily actual entry. */
+/** Vendor-wise male/female count for one shift of a daily actual entry. */
 export interface VendorAllocation {
   vendorId: string;
   vendorName?: string;
-  count: number;
+  male: number;
+  female: number;
+  /** count = male + female, computed server-side */
+  count?: number;
 }
 
 /** One row of the daily actual grid: a cost center + plan + entry for the date (if any). */
