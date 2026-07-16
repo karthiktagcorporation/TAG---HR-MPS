@@ -182,8 +182,9 @@ async function main() {
 
   for (const c of COST_CENTERS) {
     const unitId = unitMap.get(c.unit)!;
-    const existing = await prisma.costCenter.findUnique({
-      where: { unitId_costCode: { unitId, costCode: c.code } },
+    // findFirst: unique key now includes department (seed rows have none)
+    const existing = await prisma.costCenter.findFirst({
+      where: { unitId, costCode: c.code },
     });
     if (existing) {
       await prisma.costCenter.update({ where: { id: existing.id }, data: { costCentre: c.name } });
