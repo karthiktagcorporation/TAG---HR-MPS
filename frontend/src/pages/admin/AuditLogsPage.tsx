@@ -1,10 +1,13 @@
 import { useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import dayjs from 'dayjs';
+import { RotateCcw } from 'lucide-react';
+import { toast } from 'sonner';
 import { PageHeader } from '@/components/PageHeader';
 import { FilterBar } from '@/components/FilterBar';
 import { DataTable, Column } from '@/components/DataTable';
-import { Badge, Card, Input, Select } from '@/components/ui';
+import { Badge, Button, Card, Input, Select } from '@/components/ui';
+import { apiErrorMessage } from '@/services/api';
 import { auditApi } from '@/services/resources';
 
 interface AuditRow {
@@ -25,7 +28,14 @@ export default function AuditLogsPage() {
     [page, search, module, dateFrom],
   );
 
+  const qc = useQueryClient();
   const { data, isLoading } = useQuery({ queryKey: ['audit', params], queryFn: () => auditApi.list(params) });
+
+  const resetMut = useMutation({
+    mutationFn: () => auditApi.reset(),
+    onSuccess: () => { toast.success('Audit trail cleared'); setPage(1); qc.invalidateQueries({ queryKey: ['audit'] }); },
+    onError: (e) => toast.error(apiErrorMessage(e)),
+  });
 
   const columns: Column<AuditRow>[] = [
     { key: 'createdAt', header: 'Timestamp', render: (r) => dayjs(r.createdAt).format('DD-MM-YYYY HH:mm:ss') },
@@ -38,7 +48,21 @@ export default function AuditLogsPage() {
 
   return (
     <div>
-      <PageHeader title="Audit Logs" subtitle="System-wide activity trail" breadcrumbs={['Administration', 'Audit Logs']} />
+      <PageHeader
+        title="Audit Logs"
+        subtitle="System-wide activity trail"
+        breadcrumbs={['Administration', 'Audit Logs']}
+        actions={
+          <Button
+            variant="outline"
+            className="text-red-600"
+            disabled={resetMut.isPending || !data?.data?.length}
+            onClick={() => { if (confirm('Reset the audit trail? All existing log entries will be permanently deleted.')) resetMut.mutate(); }}
+          >
+            <RotateCcw className="h-4 w-4" /> {resetMut.isPending ? 'Resetting...' : 'Reset Logs'}
+          </Button>
+        }
+      />
       <FilterBar search={search} onSearch={(v) => { setSearch(v); setPage(1); }} searchPlaceholder="Search action / module / entity...">
         <Select value={module} onChange={(e) => { setModule(e.target.value); setPage(1); }} className="w-44">
           <option value="">All Modules</option>

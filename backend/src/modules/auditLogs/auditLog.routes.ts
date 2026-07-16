@@ -46,4 +46,23 @@ router.get(
   }),
 );
 
+// Reset the audit trail (Super Admin only). Leaves one entry recording who reset it.
+router.delete(
+  '/',
+  asyncHandler(async (req, res) => {
+    const { count } = await prisma.auditLog.deleteMany({});
+    await prisma.auditLog.create({
+      data: {
+        action: 'RESET',
+        module: 'SETTINGS',
+        entityType: 'AuditLog',
+        userId: req.user!.id,
+        ipAddress: req.ip,
+        metadata: { cleared: count },
+      },
+    });
+    return paginated(res, [], buildPaginationMeta(1, 15, 0));
+  }),
+);
+
 export default router;

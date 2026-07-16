@@ -106,6 +106,7 @@ export const notificationApi = {
 // ---- Audit logs ----
 export const auditApi = {
   list: (params?: Record<string, unknown>) => list<any>('/audit-logs', params),
+  reset: () => api.delete('/audit-logs').then((r) => r.data),
 };
 
 // ---- Settings ----

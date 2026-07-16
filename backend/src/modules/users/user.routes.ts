@@ -63,6 +63,7 @@ function serialize(u: any) {
       id: c.costCenter.id,
       costCode: c.costCenter.costCode,
       costCentre: c.costCenter.costCentre,
+      department: c.costCenter.department ?? null,
       unit: c.costCenter.unit.code,
     })),
   };

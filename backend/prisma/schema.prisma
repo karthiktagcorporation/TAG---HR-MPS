@@ -198,8 +198,10 @@ model CostCenter {
   plans      ManpowerPlan[]
   actuals    ManpowerActual[]
 
-  // Same cost code can exist under different units (HFRGN in SV & U2)
-  @@unique([unitId, costCode])
+  // Same cost code can exist under different units, and within a unit the
+  // same cost code can repeat with a different department
+  // (e.g. U1-HRADM-SECURITY-ASO vs U1-HRADM-HK)
+  @@unique([unitId, costCode, department])
   @@index([unitId])
   @@index([status])
   @@map("cost_centers")

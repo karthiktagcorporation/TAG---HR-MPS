@@ -28,6 +28,9 @@ export default function CostCentersPage() {
         { name: 'department', label: 'Department (optional)', placeholder: 'e.g. Production' },
         { name: 'status', label: 'Status', type: 'status' },
       ]}
+      selectFilters={[
+        { param: 'unitId', placeholder: 'All Units', options: units.map((u) => ({ value: u.id, label: `${u.code} — ${u.name}` })) },
+      ]}
       toFormValues={(r) => ({
         costCode: r.costCode, costCentre: r.costCentre, unitId: r.unitId, department: r.department ?? '', status: r.status,
       })}

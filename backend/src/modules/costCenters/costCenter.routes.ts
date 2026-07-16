@@ -8,7 +8,21 @@ import { asyncHandler } from '../../middleware/asyncHandler';
 import { idParamSchema, listQuerySchema, masterStatus } from '../../utils/commonSchemas';
 import { buildPaginationMeta, paginated, parseListQuery, success } from '../../utils/apiResponse';
 import { auditFromRequest } from '../../utils/audit';
-import { NotFoundError } from '../../utils/errors';
+import { ConflictError, NotFoundError } from '../../utils/errors';
+
+/** Duplicate = same unit + cost code + department (department null == null). */
+async function assertNoDuplicate(unitId: string, costCode: string, department: string | null, excludeId?: string) {
+  const dup = await prisma.costCenter.findFirst({
+    where: {
+      deletedAt: null,
+      unitId,
+      costCode: { equals: costCode, mode: 'insensitive' },
+      department: department === null ? null : { equals: department, mode: 'insensitive' },
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+  });
+  if (dup) throw new ConflictError('A cost center with the same unit, cost code and department already exists');
+}
 
 const router = Router();
 
@@ -53,7 +67,9 @@ router.post(
   authorize('SUPER_ADMIN', 'HR_ADMIN'),
   validate({ body: createSchema }),
   asyncHandler(async (req, res) => {
-    const cc = await prisma.costCenter.create({ data: req.body, include });
+    const department = req.body.department?.trim() || null;
+    await assertNoDuplicate(req.body.unitId, req.body.costCode, department);
+    const cc = await prisma.costCenter.create({ data: { ...req.body, department }, include });
     await auditFromRequest(req, { action: 'CREATE', module: 'COST_CENTER', entityType: 'CostCenter', entityId: cc.id, metadata: req.body });
     return success(res, cc, 201);
   }),
@@ -64,7 +80,11 @@ router.put(
   authorize('SUPER_ADMIN', 'HR_ADMIN'),
   validate({ params: idParamSchema, body: updateSchema }),
   asyncHandler(async (req, res) => {
-    const cc = await prisma.costCenter.update({ where: { id: req.params.id }, data: req.body, include });
+    const existing = await prisma.costCenter.findFirst({ where: { id: req.params.id, deletedAt: null } });
+    if (!existing) throw new NotFoundError('Cost center not found');
+    const department = req.body.department !== undefined ? req.body.department?.trim() || null : existing.department;
+    await assertNoDuplicate(req.body.unitId ?? existing.unitId, req.body.costCode ?? existing.costCode, department, existing.id);
+    const cc = await prisma.costCenter.update({ where: { id: req.params.id }, data: { ...req.body, department }, include });
     await auditFromRequest(req, { action: 'UPDATE', module: 'COST_CENTER', entityType: 'CostCenter', entityId: cc.id, metadata: req.body });
     return success(res, cc);
   }),

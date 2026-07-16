@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  Users, UserCheck, TrendingDown, TrendingUp, Building2, Boxes, Percent, ClipboardCheck,
+  Users, UserCheck, TrendingDown, TrendingUp, Building2, Boxes, Percent, ClipboardCheck, RefreshCw,
 } from 'lucide-react';
 import {
   Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer,
@@ -10,7 +10,7 @@ import {
 import { PageHeader } from '@/components/PageHeader';
 import { KpiCard } from '@/components/KpiCard';
 import { PeriodFilters, PeriodValue } from '@/components/PeriodFilters';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
+import { Button, Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
 import { LoadingState, ErrorState, EmptyState } from '@/components/States';
 import { dashboardApi } from '@/services/resources';
 import { apiErrorMessage } from '@/services/api';
@@ -44,9 +44,16 @@ export default function DashboardPage() {
     <div>
       <PageHeader
         title="Executive Dashboard"
-        subtitle="Plan vs Actual manpower overview in near real time"
+        subtitle="Plan vs Actual manpower overview"
         breadcrumbs={['TAG - MPS', 'Dashboard']}
-        actions={<PeriodFilters value={period} onChange={setPeriod} show={{ unit: true, costCenter: true }} />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <PeriodFilters value={period} onChange={setPeriod} show={{ unit: true, costCenter: true }} />
+            <Button variant="outline" size="icon" title="Refresh" onClick={() => refetch()} disabled={isLoading}>
+              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
+        }
       />
 
       {isLoading && <LoadingState rows={8} />}

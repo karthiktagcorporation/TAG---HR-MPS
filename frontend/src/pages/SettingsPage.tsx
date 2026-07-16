@@ -43,7 +43,6 @@ export default function SettingsPage() {
           <CardContent className="space-y-3">
             <div><Label>Company Name</Label><Input disabled={!canEdit} value={company.name ?? ''} onChange={(e) => setCompany({ ...company, name: e.target.value })} /></div>
             <div><Label>App Name</Label><Input disabled={!canEdit} value={company.appName ?? ''} onChange={(e) => setCompany({ ...company, appName: e.target.value })} /></div>
-            <div><Label>Logo URL</Label><Input disabled={!canEdit} placeholder="/logo.svg or https://..." value={company.logoUrl ?? ''} onChange={(e) => setCompany({ ...company, logoUrl: e.target.value })} /></div>
             <div className="grid grid-cols-2 gap-3">
               <div><Label>Email</Label><Input disabled={!canEdit} value={company.email ?? ''} onChange={(e) => setCompany({ ...company, email: e.target.value })} /></div>
               <div><Label>Phone</Label><Input disabled={!canEdit} value={company.phone ?? ''} onChange={(e) => setCompany({ ...company, phone: e.target.value })} /></div>

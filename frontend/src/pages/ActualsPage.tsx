@@ -11,7 +11,7 @@ import { LoadingState } from '@/components/States';
 import { apiErrorMessage } from '@/services/api';
 import { actualApi } from '@/services/resources';
 import { useAuth } from '@/context/AuthContext';
-import { useUnits, useVendors } from '@/hooks/useMasters';
+import { useCostCenters, useUnits, useVendors } from '@/hooks/useMasters';
 import type { ActualGridRow, VendorAllocation } from '@/types';
 
 interface Edit {
@@ -32,19 +32,25 @@ export default function ActualsPage() {
   const qc = useQueryClient();
   const [date, setDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [unitId, setUnitId] = useState('');
+  const [costCenterId, setCostCenterId] = useState('');
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [vendorEditor, setVendorEditor] = useState<{ row: ActualGridRow; shift: 'DAY' | 'NIGHT' } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const { data: units = [] } = useUnits();
+  const { data: costCenters = [] } = useCostCenters(unitId || undefined);
   const { data: vendors = [] } = useVendors();
 
   const canEnter = hasRole('SUPER_ADMIN', 'HR_ADMIN', 'USER_MASTER');
   const canDelete = user?.role === 'SUPER_ADMIN' || !!user?.canDeleteActuals;
 
-  const { data: rows = [], isLoading } = useQuery({
+  const { data: allRows = [], isLoading } = useQuery({
     queryKey: ['actual-grid', date, unitId],
     queryFn: () => actualApi.grid(date, unitId || undefined),
   });
+  const rows = useMemo(
+    () => (costCenterId ? allRows.filter((r) => r.costCenterId === costCenterId) : allRows),
+    [allRows, costCenterId],
+  );
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['actual-grid'] });
 
@@ -139,6 +145,7 @@ export default function ActualsPage() {
       Unit: r.unit,
       'Cost Code': r.costCode,
       'Cost Centre': r.costCentre,
+      Department: r.department ?? '',
       'Day Plan': r.dayPlan,
       'Night Plan': r.nightPlan,
       'Day Vendor': '',
@@ -150,7 +157,7 @@ export default function ActualsPage() {
       Remarks: r.remarks ?? '',
     }));
     const ws = XLSX.utils.json_to_sheet(data);
-    ws['!cols'] = [{ wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 28 }, { wch: 9 }, { wch: 10 }, { wch: 16 }, { wch: 9 }, { wch: 10 }, { wch: 16 }, { wch: 9 }, { wch: 10 }, { wch: 24 }];
+    ws['!cols'] = [{ wch: 12 }, { wch: 8 }, { wch: 12 }, { wch: 28 }, { wch: 20 }, { wch: 9 }, { wch: 10 }, { wch: 16 }, { wch: 9 }, { wch: 10 }, { wch: 16 }, { wch: 9 }, { wch: 10 }, { wch: 24 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Actual');
     XLSX.writeFile(wb, `daily-actual-${date}.xlsx`);
@@ -163,7 +170,8 @@ export default function ActualsPage() {
         const wb = XLSX.read(reader.result, { type: 'array' });
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const parsed = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
-        const byKey = new Map(rows.map((r) => [`${r.unit}|${r.costCode}`.toUpperCase(), r]));
+        // department disambiguates duplicate cost codes within a unit
+        const byKey = new Map(rows.map((r) => [`${r.unit}|${r.costCode}|${r.department ?? ''}`.toUpperCase(), r]));
         const vendorByName = new Map(vendors.map((v) => [v.vendorName.trim().toUpperCase(), v.id]));
         let matched = 0;
         let skipped = 0;
@@ -175,7 +183,8 @@ export default function ActualsPage() {
         for (const p of parsed) {
           const unit = String(p.Unit ?? p.unit ?? '').trim().toUpperCase();
           const code = String(p['Cost Code'] ?? p.CostCode ?? p.costCode ?? '').trim().toUpperCase();
-          const row = byKey.get(`${unit}|${code}`);
+          const dept = String(p.Department ?? p.department ?? '').trim().toUpperCase();
+          const row = byKey.get(`${unit}|${code}|${dept}`);
           if (!row) { skipped++; continue; }
           const dayVendorName = String(p['Day Vendor'] ?? '').trim().toUpperCase();
           const nightVendorName = String(p['Night Vendor'] ?? '').trim().toUpperCase();
@@ -244,9 +253,13 @@ export default function ActualsPage() {
 
       <FilterBar>
         <Input type="date" value={date} onChange={(e) => { setDate(e.target.value); setEdits({}); }} className="w-44" />
-        <Select value={unitId} onChange={(e) => { setUnitId(e.target.value); setEdits({}); }} className="w-44">
+        <Select value={unitId} onChange={(e) => { setUnitId(e.target.value); setCostCenterId(''); setEdits({}); }} className="w-44">
           <option value="">All Units</option>
           {units.map((u) => <option key={u.id} value={u.id}>{u.code} — {u.name}</option>)}
+        </Select>
+        <Select value={costCenterId} onChange={(e) => setCostCenterId(e.target.value)} className="w-56">
+          <option value="">All Cost Centers</option>
+          {costCenters.map((c) => <option key={c.id} value={c.id}>{c.costCode} — {c.costCentre}{c.department ? ` - ${c.department}` : ''}</option>)}
         </Select>
         <div className="ml-auto flex items-center gap-3 text-sm">
           <span className="text-muted-foreground">Planned <b className="text-foreground">{totals.planned}</b></span>
@@ -266,6 +279,7 @@ export default function ActualsPage() {
                 <tr className="border-b border-border bg-muted/50 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   <th className="px-3 py-3">Unit</th>
                   <th className="px-3 py-3">Cost Centre</th>
+                  <th className="px-3 py-3">Department</th>
                   <th className="px-3 py-3 text-right">Day Plan</th>
                   <th className="px-3 py-3 text-right">Night Plan</th>
                   <th className="px-3 py-3 text-right">Day Actual</th>
@@ -292,6 +306,7 @@ export default function ActualsPage() {
                         <span>{r.costCode}</span>
                         <span className="block text-xs text-muted-foreground">{r.costCentre}</span>
                       </td>
+                      <td className="px-3 py-2 text-muted-foreground">{r.department ?? '—'}</td>
                       <td className="px-3 py-2 text-right">{r.dayPlan}</td>
                       <td className="px-3 py-2 text-right">{r.nightPlan}</td>
                       <td className="px-3 py-2">{shiftCell(r, 'DAY')}</td>

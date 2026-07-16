@@ -95,12 +95,13 @@ export default function PlansPage() {
       Unit: r.unit,
       'Cost Code': r.costCode,
       'Cost Centre': r.costCentre,
+      Department: r.department ?? '',
       'Day Plan': r.dayPlan ?? '',
       'Night Plan': r.nightPlan ?? '',
       Remarks: r.remarks ?? '',
     }));
     const ws = XLSX.utils.json_to_sheet(data);
-    ws['!cols'] = [{ wch: 8 }, { wch: 12 }, { wch: 32 }, { wch: 10 }, { wch: 10 }, { wch: 30 }];
+    ws['!cols'] = [{ wch: 8 }, { wch: 12 }, { wch: 32 }, { wch: 20 }, { wch: 10 }, { wch: 10 }, { wch: 30 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Plan');
     XLSX.writeFile(wb, `manpower-plan-${period.year}-${String(period.month).padStart(2, '0')}.xlsx`);
@@ -113,7 +114,8 @@ export default function PlansPage() {
         const wb = XLSX.read(reader.result, { type: 'array' });
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const parsed = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
-        const byKey = new Map(rows.map((r) => [`${r.unit}|${r.costCode}`.toUpperCase(), r]));
+        // department disambiguates duplicate cost codes within a unit
+        const byKey = new Map(rows.map((r) => [`${r.unit}|${r.costCode}|${r.department ?? ''}`.toUpperCase(), r]));
         let matched = 0;
         let skipped = 0;
         const next: Record<string, Edit> = { ...edits };
@@ -129,7 +131,8 @@ export default function PlansPage() {
         for (const p of parsed) {
           const unit = String(p.Unit ?? p.unit ?? '').trim().toUpperCase();
           const code = String(p['Cost Code'] ?? p.CostCode ?? p.costCode ?? '').trim().toUpperCase();
-          const row = byKey.get(`${unit}|${code}`);
+          const dept = String(p.Department ?? p.department ?? '').trim().toUpperCase();
+          const row = byKey.get(`${unit}|${code}|${dept}`);
           if (!row) { skipped++; continue; }
           next[row.costCenterId] = {
             dayPlan: readNum(p, ['Day Plan', 'DayPlan', 'Day', 'day']),
@@ -202,6 +205,7 @@ export default function PlansPage() {
                   <th className="px-3 py-3">Unit</th>
                   <th className="px-3 py-3">Cost Code</th>
                   <th className="px-3 py-3">Cost Centre</th>
+                  <th className="px-3 py-3">Department</th>
                   <th className="px-3 py-3 text-right">Day Plan</th>
                   <th className="px-3 py-3 text-right">Night Plan</th>
                   <th className="px-3 py-3 text-right">Total</th>
@@ -217,10 +221,8 @@ export default function PlansPage() {
                     <tr key={r.costCenterId} className={`border-b border-border last:border-0 ${isDirty(r) ? 'bg-amber-50 dark:bg-amber-950/20' : ''}`}>
                       <td className="px-3 py-2 font-medium">{r.unit}</td>
                       <td className="px-3 py-2">{r.costCode}</td>
-                      <td className="px-3 py-2">
-                        {r.costCentre}
-                        {r.department && <span className="block text-xs text-muted-foreground">{r.department}</span>}
-                      </td>
+                      <td className="px-3 py-2">{r.costCentre}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{r.department ?? '—'}</td>
                       <td className="px-3 py-2 text-right">{canEdit ? numCell(r, 'dayPlan') : <span>{r.dayPlan ?? '—'}</span>}</td>
                       <td className="px-3 py-2 text-right">{canEdit ? numCell(r, 'nightPlan') : <span>{r.nightPlan ?? '—'}</span>}</td>
                       <td className="px-3 py-2 text-right font-semibold">{e.dayPlan + e.nightPlan}</td>

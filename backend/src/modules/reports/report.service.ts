@@ -126,6 +126,7 @@ export const reportService = {
         unit: cc?.unit.code ?? '',
         costCode: cc?.costCode ?? '',
         costCentre: cc?.costCentre ?? '',
+        department: cc?.department ?? '',
         planned: planMap.get(g.costCenterId) ?? 0,
         actual: g._sum.actualCount ?? 0,
         shortage: g._sum.shortage ?? 0,
@@ -137,6 +138,7 @@ export const reportService = {
         { key: 'unit', label: 'Unit' },
         { key: 'costCode', label: 'Cost Code' },
         { key: 'costCentre', label: 'Cost Centre' },
+        { key: 'department', label: 'Department' },
         { key: 'planned', label: 'Planned (month)' },
         { key: 'actual', label: 'Actual (period sum)' },
         { key: 'shortage', label: 'Shortage' },
@@ -187,6 +189,7 @@ export const reportService = {
       unit: r.unit.code,
       costCode: r.costCenter.costCode,
       costCentre: r.costCenter.costCentre,
+      department: r.costCenter.department ?? '',
       actual: r.actualCount,
       shortage: r.shortage,
       excess: r.excess,
@@ -198,6 +201,7 @@ export const reportService = {
         { key: 'unit', label: 'Unit' },
         { key: 'costCode', label: 'Cost Code' },
         { key: 'costCentre', label: 'Cost Centre' },
+        { key: 'department', label: 'Department' },
         { key: 'actual', label: 'Actual' },
         { key: 'shortage', label: 'Shortage' },
         { key: 'excess', label: 'Excess' },
@@ -240,7 +244,7 @@ export const reportService = {
       : [];
 
     type Row = {
-      unit: string; costCode: string; costCentre: string;
+      unit: string; costCode: string; costCentre: string; department: string;
       dayPlan: number; nightPlan: number; planned: number;
       dayActual: number; nightActual: number; actual: number;
       male: number; female: number; shortage: number; excess: number;
@@ -252,6 +256,7 @@ export const reportService = {
         unit: p.costCenter.unit.code,
         costCode: p.costCenter.costCode,
         costCentre: p.costCenter.costCentre,
+        department: p.costCenter.department ?? '',
         dayPlan: p.dayPlan,
         nightPlan: p.nightPlan,
         planned: p.plannedCount,
@@ -267,7 +272,7 @@ export const reportService = {
     for (const cc of orphanCcs) {
       const a = actualMap.get(cc.id)!;
       rows.push({
-        unit: cc.unit.code, costCode: cc.costCode, costCentre: cc.costCentre,
+        unit: cc.unit.code, costCode: cc.costCode, costCentre: cc.costCentre, department: cc.department ?? '',
         dayPlan: 0, nightPlan: 0, planned: 0,
         dayActual: a.dayActual ?? 0, nightActual: a.nightActual ?? 0, actual: a.actualCount ?? 0,
         male: a.maleActual ?? 0, female: a.femaleActual ?? 0,
@@ -278,13 +283,13 @@ export const reportService = {
     if (rows.length) {
       const total = rows.reduce(
         (t, r) => ({
-          unit: 'TOTAL', costCode: '', costCentre: periodLabel,
+          unit: 'TOTAL', costCode: '', costCentre: periodLabel, department: '',
           dayPlan: t.dayPlan + r.dayPlan, nightPlan: t.nightPlan + r.nightPlan, planned: t.planned + r.planned,
           dayActual: t.dayActual + r.dayActual, nightActual: t.nightActual + r.nightActual, actual: t.actual + r.actual,
           male: t.male + r.male, female: t.female + r.female,
           shortage: t.shortage + r.shortage, excess: t.excess + r.excess,
         }),
-        { unit: 'TOTAL', costCode: '', costCentre: periodLabel, dayPlan: 0, nightPlan: 0, planned: 0, dayActual: 0, nightActual: 0, actual: 0, male: 0, female: 0, shortage: 0, excess: 0 },
+        { unit: 'TOTAL', costCode: '', costCentre: periodLabel, department: '', dayPlan: 0, nightPlan: 0, planned: 0, dayActual: 0, nightActual: 0, actual: 0, male: 0, female: 0, shortage: 0, excess: 0 },
       );
       rows.push(total);
     }
@@ -293,6 +298,7 @@ export const reportService = {
         { key: 'unit', label: 'Unit' },
         { key: 'costCode', label: 'Cost Code' },
         { key: 'costCentre', label: 'Cost Centre' },
+        { key: 'department', label: 'Department' },
         { key: 'dayPlan', label: 'Day Plan' },
         { key: 'nightPlan', label: 'Night Plan' },
         { key: 'planned', label: 'Total Plan' },
@@ -329,6 +335,7 @@ export const reportService = {
         unit: p.costCenter.unit.code,
         costCode: p.costCenter.costCode,
         costCentre: p.costCenter.costCentre,
+        department: p.costCenter.department ?? '',
         planned: p.plannedCount,
         avgActual,
         variance: Math.round((avgActual - p.plannedCount) * 10) / 10,
@@ -340,6 +347,7 @@ export const reportService = {
         { key: 'unit', label: 'Unit' },
         { key: 'costCode', label: 'Cost Code' },
         { key: 'costCentre', label: 'Cost Centre' },
+        { key: 'department', label: 'Department' },
         { key: 'planned', label: 'Planned' },
         { key: 'avgActual', label: 'Avg Daily Actual' },
         { key: 'variance', label: 'Variance' },
@@ -361,6 +369,7 @@ export const reportService = {
       unit: r.unit.code,
       costCode: r.costCenter.costCode,
       costCentre: r.costCenter.costCentre,
+      department: r.costCenter.department ?? '',
       actual: r.actualCount,
       [kind]: kind === 'shortage' ? r.shortage : r.excess,
     }));
@@ -370,6 +379,7 @@ export const reportService = {
         { key: 'unit', label: 'Unit' },
         { key: 'costCode', label: 'Cost Code' },
         { key: 'costCentre', label: 'Cost Centre' },
+        { key: 'department', label: 'Department' },
         { key: 'actual', label: 'Actual' },
         { key: kind, label: kind === 'shortage' ? 'Shortage' : 'Excess' },
       ],
@@ -391,6 +401,7 @@ export const reportService = {
       unit: r.unit.code,
       costCode: r.costCenter.costCode,
       costCentre: r.costCenter.costCentre,
+      department: r.costCenter.department ?? '',
       planned: planMap.get(r.costCenterId) ?? 0,
       actual: r.actualCount,
       shortage: r.shortage,
@@ -403,6 +414,7 @@ export const reportService = {
         { key: 'unit', label: 'Unit' },
         { key: 'costCode', label: 'Cost Code' },
         { key: 'costCentre', label: 'Cost Centre' },
+        { key: 'department', label: 'Department' },
         { key: 'planned', label: 'Planned' },
         { key: 'actual', label: 'Actual' },
         { key: 'shortage', label: 'Shortage' },

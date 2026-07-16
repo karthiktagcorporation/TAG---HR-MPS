@@ -27,6 +27,14 @@ interface CrudApi<T> {
   remove: (id: string) => Promise<unknown>;
 }
 
+/** Extra dropdown filter rendered in the FilterBar; its value is sent as a list query param. */
+export interface SelectFilterDef {
+  param: string;
+  placeholder: string;
+  options: { value: string; label: string }[];
+  width?: string;
+}
+
 interface Props<T> {
   title: string;
   subtitle?: string;
@@ -39,15 +47,17 @@ interface Props<T> {
   editRoles?: RoleCode[];
   deleteRoles?: RoleCode[];
   toFormValues?: (row: T) => Record<string, any>;
+  selectFilters?: SelectFilterDef[];
 }
 
 export function CrudPage<T extends { id: string; status?: string }>({
-  title, subtitle, breadcrumbs, queryKey, api, columns, fields, searchPlaceholder, editRoles = ['SUPER_ADMIN', 'HR_ADMIN'], deleteRoles = ['SUPER_ADMIN'], toFormValues,
+  title, subtitle, breadcrumbs, queryKey, api, columns, fields, searchPlaceholder, editRoles = ['SUPER_ADMIN', 'HR_ADMIN'], deleteRoles = ['SUPER_ADMIN'], toFormValues, selectFilters,
 }: Props<T>) {
   const { hasRole } = useAuth();
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
+  const [filterValues, setFilterValues] = useState<Record<string, string>>({});
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<T | null>(null);
   const [form, setForm] = useState<Record<string, any>>({});
@@ -55,9 +65,10 @@ export function CrudPage<T extends { id: string; status?: string }>({
   const canEdit = hasRole(...editRoles);
   const canDelete = hasRole(...deleteRoles);
 
+  const activeFilters = Object.fromEntries(Object.entries(filterValues).filter(([, v]) => v !== ''));
   const { data, isLoading } = useQuery({
-    queryKey: [queryKey, { page, search }],
-    queryFn: () => api.list({ page, pageSize: 10, search: search || undefined }),
+    queryKey: [queryKey, { page, search, ...activeFilters }],
+    queryFn: () => api.list({ page, pageSize: 10, search: search || undefined, ...activeFilters }),
   });
 
   const saveMut = useMutation({
@@ -135,7 +146,19 @@ export function CrudPage<T extends { id: string; status?: string }>({
         actions={canEdit && <Button onClick={openCreate}><Plus className="h-4 w-4" /> Add {title.replace(/s$/, '')}</Button>}
       />
 
-      <FilterBar search={search} onSearch={(v) => { setSearch(v); setPage(1); }} searchPlaceholder={searchPlaceholder} />
+      <FilterBar search={search} onSearch={(v) => { setSearch(v); setPage(1); }} searchPlaceholder={searchPlaceholder}>
+        {selectFilters?.map((f) => (
+          <Select
+            key={f.param}
+            className={f.width ?? 'w-44'}
+            value={filterValues[f.param] ?? ''}
+            onChange={(e) => { setFilterValues((prev) => ({ ...prev, [f.param]: e.target.value })); setPage(1); }}
+          >
+            <option value="">{f.placeholder}</option>
+            {f.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </Select>
+        ))}
+      </FilterBar>
 
       <Card>
         <DataTable columns={allColumns} data={data?.data ?? []} loading={isLoading} meta={data?.meta} onPageChange={setPage} />

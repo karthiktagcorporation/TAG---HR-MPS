@@ -18,7 +18,10 @@ interface Props {
 export function PeriodFilters({ value, onChange, show = { unit: true } }: Props) {
   const { data: units = [] } = useUnits();
   const { data: costCenters = [] } = useCostCenters(value.unitId);
-  const years = Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - 3 + i);
+  // Business started using TAG-MPS in 2026 — no earlier years needed
+  const START_YEAR = 2026;
+  const endYear = Math.max(new Date().getFullYear() + 2, START_YEAR + 2);
+  const years = Array.from({ length: endYear - START_YEAR + 1 }, (_, i) => START_YEAR + i);
 
   return (
     <div className="flex flex-wrap items-center gap-2">
@@ -44,7 +47,7 @@ export function PeriodFilters({ value, onChange, show = { unit: true } }: Props)
         <Select value={value.costCenterId ?? ''} onChange={(e) => onChange({ ...value, costCenterId: e.target.value || undefined })} className="w-52">
           <option value="">All Cost Centers</option>
           {costCenters.map((c) => (
-            <option key={c.id} value={c.id}>{c.costCode} — {c.costCentre}</option>
+            <option key={c.id} value={c.id}>{c.costCode} — {c.costCentre}{c.department ? ` - ${c.department}` : ''}</option>
           ))}
         </Select>
       )}

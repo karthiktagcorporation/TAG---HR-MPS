@@ -15,7 +15,7 @@ import type { RoleCode } from '@/types';
 interface UserRow {
   id: string; name: string; username: string; email: string; status: string; role: RoleCode; roleName: string;
   canDeleteActuals: boolean;
-  costCenters: { id: string; costCode: string; costCentre: string; unit: string }[];
+  costCenters: { id: string; costCode: string; costCentre: string; department?: string | null; unit: string }[];
 }
 
 const ROLES: { value: RoleCode; label: string }[] = [
@@ -49,6 +49,13 @@ export default function UsersPage() {
     { key: 'email', header: 'Email' },
     { key: 'role', header: 'Role', render: (r) => <Badge className="bg-brand-50 text-brand-700 dark:bg-brand-900/40 dark:text-brand-200">{r.roleName}</Badge> },
     { key: 'cc', header: 'Cost Centers', render: (r) => (r.role === 'USER_MASTER' ? `${r.costCenters.length} assigned` : 'All') },
+    {
+      key: 'dept', header: 'Department', render: (r) => {
+        if (r.role !== 'USER_MASTER') return 'All';
+        const depts = [...new Set(r.costCenters.map((c) => c.department).filter(Boolean))] as string[];
+        return depts.length ? depts.join(', ') : '—';
+      },
+    },
     { key: 'del', header: 'Can Delete Actuals', render: (r) => (r.role === 'SUPER_ADMIN' ? 'Always' : r.canDeleteActuals ? 'Yes' : 'No') },
     { key: 'status', header: 'Status', render: (r) => <StatusBadge status={r.status} /> },
     {
@@ -136,7 +143,10 @@ function UserModal({ editing, onClose, onSaved }: { editing: UserRow | null; onC
             {costCenters.map((c) => (
               <label key={c.id} className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted">
                 <input type="checkbox" checked={form.costCenterIds.includes(c.id)} onChange={() => toggleCc(c.id)} />
-                <span>{c.unit?.code} · {c.costCode} — {c.costCentre}</span>
+                <span>
+                  {c.unit?.code} · {c.costCode} — {c.costCentre}
+                  {c.department && <span className="text-muted-foreground"> - {c.department}</span>}
+                </span>
               </label>
             ))}
           </div>
