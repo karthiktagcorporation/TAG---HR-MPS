@@ -38,7 +38,7 @@ export default function AuditLogsPage() {
   });
 
   const columns: Column<AuditRow>[] = [
-    { key: 'createdAt', header: 'Timestamp', render: (r) => dayjs(r.createdAt).format('DD-MM-YYYY HH:mm:ss') },
+    { key: 'createdAt', header: 'Timestamp', render: (r) => dayjs(r.createdAt).format('DD/MM/YYYY HH:mm:ss') },
     { key: 'user', header: 'User', render: (r) => r.user?.name ?? 'System' },
     { key: 'action', header: 'Action', render: (r) => <Badge className="bg-brand-50 text-brand-700 dark:bg-brand-900/40 dark:text-brand-200">{r.action}</Badge> },
     { key: 'module', header: 'Module' },

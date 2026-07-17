@@ -235,7 +235,8 @@ model ManpowerPlan {
   createdBy  User       @relation("PlanCreatedBy", fields: [createdById], references: [id])
   approvedBy User?      @relation("PlanApprovedBy", fields: [approvedById], references: [id])
 
-  history PlanStatusHistory[]
+  history   PlanStatusHistory[]
+  revisions PlanRevision[]
 
   @@unique([year, month, costCenterId], name: "plan_unique_key")
   @@index([year, month])
@@ -243,6 +244,25 @@ model ManpowerPlan {
   @@index([costCenterId])
   @@index([status])
   @@map("manpower_plans")
+}
+
+// Effective-dated plan quantities. A mid-month plan change creates a new
+// revision from its effective date; earlier days keep the previous revision.
+// The base ManpowerPlan row always mirrors the latest revision.
+model PlanRevision {
+  id            String   @id @default(cuid())
+  planId        String
+  effectiveFrom DateTime @db.Date
+  plannedCount  Int
+  dayPlan       Int      @default(0)
+  nightPlan     Int      @default(0)
+  createdAt     DateTime @default(now())
+
+  plan ManpowerPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@unique([planId, effectiveFrom])
+  @@index([planId])
+  @@map("plan_revisions")
 }
 
 model PlanStatusHistory {
@@ -312,6 +332,28 @@ model ActualVendorAllocation {
   @@unique([actualId, shift, vendorId])
   @@index([vendorId])
   @@map("actual_vendor_allocations")
+}
+
+// ===================== CALENDAR MASTER =====================
+
+// Per-month working-day configuration. Monthly plan totals are computed as
+// dailyPlan × workingDays. When no row exists for a month, every day of the
+// month counts as a working day.
+model CalendarMonth {
+  id           String   @id @default(cuid())
+  year         Int
+  month        Int // 1-12
+  // Weekday numbers that are weekly offs (0=Sunday .. 6=Saturday)
+  weeklyOffDays Int[]   @default([])
+  // [{ "date": "YYYY-MM-DD", "name": "Holiday name" }]
+  holidays     Json     @default("[]")
+  workingDays  Int // computed server-side on save
+  remarks      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([year, month])
+  @@map("calendar_months")
 }
 
 // ===================== NOTIFICATIONS =====================

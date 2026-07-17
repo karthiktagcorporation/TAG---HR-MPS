@@ -65,7 +65,7 @@ export function exportToPdf(p: ExportPayload) {
   doc.setTextColor(80, 80, 80);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
-  const stamp = `Generated: ${new Date().toLocaleString()}${p.filterSummary ? '   |   ' + p.filterSummary : ''}`;
+  const stamp = `Generated: ${new Date().toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', '')}${p.filterSummary ? '   |   ' + p.filterSummary : ''}`;
   doc.text(stamp, 40, 70);
 
   const { head, body } = asMatrix(p);
@@ -106,7 +106,7 @@ export function printPayload(p: ExportPayload) {
       tr:nth-child(even){background:#f3f6fc}
     </style></head><body>
     <h1>TAG - MPS — ${p.title}</h1>
-    <div class="sub">${p.filterSummary ?? ''} | Generated ${new Date().toLocaleString()}</div>
+    <div class="sub">${p.filterSummary ?? ''} | Generated ${new Date().toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', '')}</div>
     <table><thead><tr>${head.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rowsHtml}</tbody></table>
     </body></html>`);
   win.document.close();

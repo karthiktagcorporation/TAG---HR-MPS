@@ -6,6 +6,7 @@ import DashboardPage from '@/pages/DashboardPage';
 import VendorsPage from '@/pages/masters/VendorsPage';
 import UnitsPage from '@/pages/masters/UnitsPage';
 import CostCentersPage from '@/pages/masters/CostCentersPage';
+import CalendarPage from '@/pages/masters/CalendarPage';
 import PlansPage from '@/pages/PlansPage';
 import ActualsPage from '@/pages/ActualsPage';
 import VariancePage from '@/pages/VariancePage';
@@ -35,6 +36,7 @@ const router = createBrowserRouter([
       { path: 'masters/vendors', element: <RoleRoute roles={['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT']}><VendorsPage /></RoleRoute> },
       { path: 'masters/units', element: <RoleRoute roles={['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT']}><UnitsPage /></RoleRoute> },
       { path: 'masters/cost-centers', element: <RoleRoute roles={['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT']}><CostCentersPage /></RoleRoute> },
+      { path: 'masters/calendar', element: <RoleRoute roles={['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT']}><CalendarPage /></RoleRoute> },
       { path: 'admin/users', element: <RoleRoute roles={['SUPER_ADMIN']}><UsersPage /></RoleRoute> },
       { path: 'admin/audit-logs', element: <RoleRoute roles={['SUPER_ADMIN']}><AuditLogsPage /></RoleRoute> },
       { path: 'notifications', element: <NotificationsPage /> },

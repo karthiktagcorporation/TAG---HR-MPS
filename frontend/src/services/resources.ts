@@ -57,8 +57,8 @@ export const planApi = {
   pending: () => list<ManpowerPlan>('/plans/pending'),
   grid: (year: number, month: number, unitId?: string) =>
     api.get('/plans/grid', { params: { year, month, unitId } }).then((r) => r.data.data as PlanGridRow[]),
-  saveGrid: (year: number, month: number, rows: { costCenterId: string; dayPlan: number; nightPlan: number; remarks?: string | null }[]) =>
-    api.post('/plans/grid', { year, month, rows }).then((r) => r.data.data as { saved: number; unchanged: number; errors: { row: number; message: string }[] }),
+  saveGrid: (year: number, month: number, rows: { costCenterId: string; dayPlan: number; nightPlan: number; remarks?: string | null }[], effectiveFrom?: string) =>
+    api.post('/plans/grid', { year, month, rows, effectiveFrom }).then((r) => r.data.data as { saved: number; unchanged: number; errors: { row: number; message: string }[] }),
   approve: (id: string, remarks?: string) => api.post(`/plans/${id}/approve`, { remarks }).then((r) => r.data.data),
   reject: (id: string, remarks: string) => api.post(`/plans/${id}/reject`, { remarks }).then((r) => r.data.data),
   approveMonth: (year: number, month: number, remarks?: string) =>
@@ -94,6 +94,23 @@ export const reportApi = {
     const qs = new URLSearchParams(params as Record<string, string>).toString();
     return `${api.defaults.baseURL}/reports/${type}/export.xlsx?${qs}`;
   },
+};
+
+// ---- Calendar master ----
+export interface CalendarMonthRow {
+  id: string | null;
+  year: number;
+  month: number;
+  weeklyOffDays: number[];
+  holidays: { date: string; name: string }[];
+  workingDays: number;
+  remarks: string | null;
+  configured: boolean;
+}
+export const calendarApi = {
+  list: (year: number) => api.get('/calendar', { params: { year } }).then((r) => r.data.data as CalendarMonthRow[]),
+  save: (body: { year: number; month: number; weeklyOffDays: number[]; holidays: { date: string; name: string }[]; remarks?: string | null }) =>
+    api.put('/calendar', body).then((r) => r.data.data as CalendarMonthRow),
 };
 
 // ---- Notifications ----

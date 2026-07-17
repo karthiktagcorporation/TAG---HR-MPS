@@ -45,7 +45,7 @@ export default function NotificationsPage() {
                 <div className="flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <p className="font-semibold">{n.title}</p>
-                    <span className="text-xs text-muted-foreground">{dayjs(n.createdAt).format('DD MMM, HH:mm')}</span>
+                    <span className="text-xs text-muted-foreground">{dayjs(n.createdAt).format('DD/MM/YYYY HH:mm')}</span>
                   </div>
                   <p className="mt-0.5 text-sm text-muted-foreground">{n.message}</p>
                 </div>

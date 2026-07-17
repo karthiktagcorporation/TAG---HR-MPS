@@ -73,8 +73,12 @@ export default function PlansPage() {
     [rows, edits],
   );
 
+  // Mid-month plan change: new quantities apply from this date (default: the 1st)
+  const monthStart = `${period.year}-${String(period.month).padStart(2, '0')}-01`;
+  const [effectiveFrom, setEffectiveFrom] = useState('');
+
   const saveMut = useMutation({
-    mutationFn: () => planApi.saveGrid(period.year, period.month, editedRows),
+    mutationFn: () => planApi.saveGrid(period.year, period.month, editedRows, effectiveFrom || undefined),
     onSuccess: (r) => {
       toast.success(`Saved ${r.saved} plan(s) — sent for approval${r.unchanged ? ` (${r.unchanged} unchanged)` : ''}`);
       if (r.errors.length) toast.error(`${r.errors.length} row(s) failed`);
@@ -183,7 +187,21 @@ export default function PlansPage() {
       />
 
       <FilterBar>
-        <PeriodFilters value={period} onChange={(v) => { setPeriod(v); setEdits({}); }} show={{ unit: true }} />
+        <PeriodFilters value={period} onChange={(v) => { setPeriod(v); setEdits({}); setEffectiveFrom(''); }} show={{ unit: true }} />
+        {canEdit && (
+          <div className="flex items-center gap-1.5 text-sm">
+            <span className="text-muted-foreground">Effective from</span>
+            <Input
+              type="date"
+              className="w-40"
+              title="Changed plan quantities apply from this date (leave empty = whole month). Earlier days keep the previous plan."
+              value={effectiveFrom}
+              min={monthStart}
+              max={`${period.year}-${String(period.month).padStart(2, '0')}-${String(new Date(period.year, period.month, 0).getDate()).padStart(2, '0')}`}
+              onChange={(e) => setEffectiveFrom(e.target.value)}
+            />
+          </div>
+        )}
         {canApprove && pendingCount > 0 && (
           <div className="flex items-center gap-2">
             <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">{pendingCount} pending</Badge>

@@ -14,6 +14,20 @@ import { actualGridQuery, actualListQuery, bulkActualSchema, createActualSchema,
 const router = Router();
 router.use(authenticate);
 
+/**
+ * Entry window: non-SUPER_ADMIN users may only enter/edit actuals for the
+ * last 3 days (today, yesterday, day before) and never for future dates.
+ */
+function assertEntryDateAllowed(req: any, date: Date) {
+  if (req.user!.role === 'SUPER_ADMIN') return;
+  const today = new Date();
+  const todayUtc = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  const dUtc = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  const diffDays = (todayUtc - dUtc) / 86400000;
+  if (diffDays < 0) throw new ForbiddenError('Future dates are not allowed');
+  if (diffDays > 2) throw new ForbiddenError('Entries are allowed only for the last 3 days. Contact a Super Admin for older dates.');
+}
+
 // All roles may read (USER_MASTER constrained to assigned cost centers)
 router.get(
   '/',
@@ -51,6 +65,7 @@ router.post(
   validate({ body: createActualSchema }),
   asyncHandler(async (req, res) => {
     assertCostCenterAccess(req, req.body.costCenterId);
+    assertEntryDateAllowed(req, new Date(req.body.date));
     const actual = await actualService.upsert({ ...req.body, createdById: req.user!.id });
     await auditFromRequest(req, { action: 'UPSERT', module: 'ACTUAL', entityType: 'ManpowerActual', entityId: actual.id, metadata: req.body });
     return success(res, actual, 201);
@@ -63,9 +78,10 @@ router.put(
   validate({ params: idParamSchema, body: updateActualSchema }),
   asyncHandler(async (req, res) => {
     // Verify scope against the existing record's cost center before mutating
-    const current = await prisma.manpowerActual.findFirst({ where: { id: req.params.id, deletedAt: null }, select: { costCenterId: true } });
+    const current = await prisma.manpowerActual.findFirst({ where: { id: req.params.id, deletedAt: null }, select: { costCenterId: true, date: true } });
     if (!current) throw new NotFoundError('Actual entry not found');
     assertCostCenterAccess(req, current.costCenterId);
+    assertEntryDateAllowed(req, current.date);
     const actual = await actualService.update(req.params.id, req.body);
     await auditFromRequest(req, { action: 'UPDATE', module: 'ACTUAL', entityType: 'ManpowerActual', entityId: actual.id, metadata: req.body });
     return success(res, actual);
@@ -100,6 +116,7 @@ router.post(
       const invalid = req.body.rows.find((r: any) => !allowed.includes(r.costCenterId));
       if (invalid) assertCostCenterAccess(req, invalid.costCenterId);
     }
+    for (const r of req.body.rows) assertEntryDateAllowed(req, new Date(r.date));
     const result = await actualService.bulkUpsert(req.body.rows, req.user!.id);
     await auditFromRequest(req, { action: 'IMPORT', module: 'ACTUAL', metadata: { saved: result.saved } });
     return success(res, result, 201);

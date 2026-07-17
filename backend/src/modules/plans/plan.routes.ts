@@ -66,9 +66,9 @@ router.post(
   authorize('SUPER_ADMIN', 'HR_ADMIN'),
   validate({ body: saveGridSchema }),
   asyncHandler(async (req, res) => {
-    const { year, month, rows } = req.body;
-    const result = await planService.saveGrid(year, month, rows, { id: req.user!.id, name: req.user!.username });
-    await auditFromRequest(req, { action: 'SAVE_GRID', module: 'PLAN', metadata: { year, month, saved: result.saved, unchanged: result.unchanged } });
+    const { year, month, rows, effectiveFrom } = req.body;
+    const result = await planService.saveGrid(year, month, rows, { id: req.user!.id, name: req.user!.username }, effectiveFrom ? new Date(effectiveFrom) : undefined);
+    await auditFromRequest(req, { action: 'SAVE_GRID', module: 'PLAN', metadata: { year, month, effectiveFrom, saved: result.saved, unchanged: result.unchanged } });
     return success(res, result, 201);
   }),
 );

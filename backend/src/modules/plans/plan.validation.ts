@@ -11,6 +11,8 @@ export const saveGridSchema = z.object({
   year: z.coerce.number().int().min(2000).max(2100),
   month: z.coerce.number().int().min(1).max(12),
   rows: z.array(gridRowSchema).min(1).max(2000),
+  // Mid-month plan change: new quantities apply from this date (default: the 1st)
+  effectiveFrom: z.coerce.date().optional(),
 });
 
 export const gridQuerySchema = z.object({

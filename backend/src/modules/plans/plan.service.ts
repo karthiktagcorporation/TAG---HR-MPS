@@ -111,10 +111,30 @@ export const planService = {
    * Every touched row goes to PENDING — approval by HR Admin / Super Admin is
    * always required, including edits to previously approved plans.
    */
-  async saveGrid(year: number, month: number, rows: GridRow[], actor: { id: string; name: string }) {
+  async saveGrid(year: number, month: number, rows: GridRow[], actor: { id: string; name: string }, effectiveFrom?: Date) {
     const results = { saved: 0, unchanged: 0, errors: [] as { row: number; message: string }[] };
     const ccs = await prisma.costCenter.findMany({ where: { id: { in: rows.map((r) => r.costCenterId) } } });
     const ccMap = new Map(ccs.map((c) => [c.id, c]));
+
+    // Effective date for these changes (defaults to the 1st). Clamped to the month.
+    const monthStart = new Date(Date.UTC(year, month - 1, 1));
+    let effDate = monthStart;
+    if (effectiveFrom) {
+      const d = new Date(Date.UTC(effectiveFrom.getUTCFullYear(), effectiveFrom.getUTCMonth(), effectiveFrom.getUTCDate()));
+      if (d.getUTCFullYear() !== year || d.getUTCMonth() + 1 !== month) {
+        throw new BadRequestError('Effective-from date must fall within the plan month');
+      }
+      effDate = d;
+    }
+    // An edit adds a revision from the chosen date, keeping earlier revisions
+    // (and the variance already computed for those days) intact.
+    const upsertRevision = async (planId: string, values: { plannedCount: number; dayPlan: number; nightPlan: number }) => {
+      await prisma.planRevision.upsert({
+        where: { planId_effectiveFrom: { planId, effectiveFrom: effDate } },
+        update: values,
+        create: { planId, effectiveFrom: effDate, ...values },
+      });
+    };
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -146,8 +166,9 @@ export const planService = {
             where: { id: existing.id },
             data: { ...values, status: PlanStatus.PENDING, deletedAt: null, approvedById: null, approvedAt: null, rejectionRemarks: null },
           });
+          await upsertRevision(updated.id, { plannedCount: values.plannedCount, dayPlan: values.dayPlan, nightPlan: values.nightPlan });
           await prisma.planStatusHistory.create({
-            data: { planId: updated.id, fromStatus: existing.status, toStatus: PlanStatus.PENDING, actionById: actor.id, remarks: 'Updated — pending approval' },
+            data: { planId: updated.id, fromStatus: existing.status, toStatus: PlanStatus.PENDING, actionById: actor.id, remarks: `Updated (effective ${effDate.toISOString().slice(0, 10)}) — pending approval` },
           });
         } else if (existing) {
           // previously soft-deleted → revive as pending
@@ -155,6 +176,9 @@ export const planService = {
             where: { id: existing.id },
             data: { ...values, status: PlanStatus.PENDING, deletedAt: null, createdById: actor.id, approvedById: null, approvedAt: null, rejectionRemarks: null },
           });
+          // Revived plan starts a fresh timeline from the chosen date
+          await prisma.planRevision.deleteMany({ where: { planId: existing.id } });
+          await upsertRevision(existing.id, { plannedCount: values.plannedCount, dayPlan: values.dayPlan, nightPlan: values.nightPlan });
           await prisma.planStatusHistory.create({
             data: { planId: existing.id, toStatus: PlanStatus.PENDING, actionById: actor.id, remarks: 'Re-created — pending approval' },
           });
@@ -170,6 +194,7 @@ export const planService = {
               createdById: actor.id,
             },
           });
+          await upsertRevision(created.id, { plannedCount: values.plannedCount, dayPlan: values.dayPlan, nightPlan: values.nightPlan });
           await prisma.planStatusHistory.create({
             data: { planId: created.id, toStatus: PlanStatus.PENDING, actionById: actor.id, remarks: 'Created — pending approval' },
           });
@@ -258,7 +283,7 @@ export const planService = {
     let skipped = 0;
     for (const p of source) {
       try {
-        await prisma.manpowerPlan.create({
+        const dup = await prisma.manpowerPlan.create({
           data: {
             year: toYear,
             month: toMonth,
@@ -270,6 +295,15 @@ export const planService = {
             remarks: p.remarks,
             status: PlanStatus.PENDING,
             createdById,
+          },
+        });
+        await prisma.planRevision.create({
+          data: {
+            planId: dup.id,
+            effectiveFrom: new Date(Date.UTC(toYear, toMonth - 1, 1)),
+            plannedCount: p.plannedCount,
+            dayPlan: p.dayPlan,
+            nightPlan: p.nightPlan,
           },
         });
         created++;

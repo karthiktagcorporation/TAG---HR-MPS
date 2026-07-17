@@ -2,6 +2,7 @@ import { Prisma, Shift } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { BadRequestError, NotFoundError } from '../../utils/errors';
 import { buildPaginationMeta } from '../../utils/apiResponse';
+import { dailyPlanOnDate, planForCostCenterOnDate } from '../plans/planTimeline';
 
 const include = {
   unit: true,
@@ -17,19 +18,13 @@ export interface VendorAllocationInput {
 }
 
 /**
- * Finds the planned count for the cost center's APPROVED monthly plan and
- * returns the variance breakdown:
+ * Variance against the plan IN FORCE ON THAT DATE (effective-dated revisions —
+ * a mid-month plan change does not rewrite earlier days):
  *   shortage = max(planned - actual, 0)
  *   excess   = max(actual - planned, 0)
  */
 export async function computeVariance(date: Date, costCenterId: string, actualCount: number) {
-  const year = date.getUTCFullYear();
-  const month = date.getUTCMonth() + 1;
-  const plan = await prisma.manpowerPlan.findFirst({
-    where: { year, month, costCenterId, status: 'APPROVED', deletedAt: null },
-    select: { plannedCount: true },
-  });
-  const planned = plan?.plannedCount ?? 0;
+  const { plannedCount: planned } = await planForCostCenterOnDate(costCenterId, date);
   return {
     planned,
     shortage: Math.max(planned - actualCount, 0),
@@ -38,7 +33,8 @@ export async function computeVariance(date: Date, costCenterId: string, actualCo
 }
 
 function cleanVendors(rows: VendorAllocationInput[] | undefined) {
-  return (rows ?? []).filter((r) => r.vendorId && (r.male > 0 || r.female > 0));
+  // Zero counts are allowed: selecting a vendor with 0/0 records zero attendance
+  return (rows ?? []).filter((r) => r.vendorId);
 }
 
 function sumShift(rows: VendorAllocationInput[]) {
@@ -74,8 +70,11 @@ export const actualService = {
           }
         : {}),
     };
+    // 'unit' sorts by unit code (for the All Dates view), then date
+    const orderBy: Prisma.ManpowerActualOrderByWithRelationInput[] =
+      sortBy === 'unit' ? [{ unit: { code: sortDir } }, { date: 'desc' }] : [{ [sortBy]: sortDir }];
     const [rows, total] = await Promise.all([
-      prisma.manpowerActual.findMany({ where, include, skip: (page - 1) * pageSize, take: pageSize, orderBy: { [sortBy]: sortDir } }),
+      prisma.manpowerActual.findMany({ where, include, skip: (page - 1) * pageSize, take: pageSize, orderBy }),
       prisma.manpowerActual.count({ where }),
     ]);
     return { rows, meta: buildPaginationMeta(page, pageSize, total) };
@@ -96,22 +95,17 @@ export const actualService = {
       include: { unit: true },
       orderBy: [{ unit: { code: 'asc' } }, { costCode: 'asc' }],
     });
-    const year = date.getUTCFullYear();
-    const month = date.getUTCMonth() + 1;
-    const [plans, actuals] = await Promise.all([
-      prisma.manpowerPlan.findMany({
-        where: { year, month, status: 'APPROVED', deletedAt: null },
-        select: { costCenterId: true, plannedCount: true, dayPlan: true, nightPlan: true },
-      }),
+    const [planMap, actuals] = await Promise.all([
+      // plan in force on THIS date (mid-month changes apply from their effective date)
+      dailyPlanOnDate(date),
       prisma.manpowerActual.findMany({
         where: { date, deletedAt: null },
         include: { vendorAllocations: { include: { vendor: { select: { id: true, vendorName: true } } } } },
       }),
     ]);
-    const planMap = new Map(plans.map((p) => [p.costCenterId, p]));
     const actualMap = new Map(actuals.map((a) => [a.costCenterId, a]));
     return costCenters.map((cc) => {
-      const plan = planMap.get(cc.id);
+      const plan = planMap.get(cc.id)?.qty;
       const actual = actualMap.get(cc.id);
       const allocationsFor = (shift: Shift) =>
         (actual?.vendorAllocations ?? [])

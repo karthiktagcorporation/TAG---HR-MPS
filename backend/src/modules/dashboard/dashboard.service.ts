@@ -1,9 +1,14 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma';
+import { getWorkingDays } from '../calendar/calendar.service';
+import { monthlyPlanTotals, dailyPlanOnDate } from '../plans/planTimeline';
+import { fmtDate } from '../../utils/dateFormat';
 
 export interface DashboardFilters {
   year: number;
   month: number;
+  /** Single-date view: plan = daily plan × 1, actuals for that date only */
+  date?: Date;
   dateFrom?: Date;
   dateTo?: Date;
   unitId?: string;
@@ -11,19 +16,38 @@ export interface DashboardFilters {
   scopedCostCenterIds?: string[] | null;
 }
 
-function planWhere(f: DashboardFilters): Prisma.ManpowerPlanWhereInput {
-  return {
-    deletedAt: null,
-    status: 'APPROVED',
-    year: f.year,
-    month: f.month,
-    ...(f.scopedCostCenterIds ? { costCenterId: { in: f.scopedCostCenterIds } } : {}),
-    ...(f.unitId ? { unitId: f.unitId } : {}),
-    ...(f.costCenterId ? { costCenterId: f.costCenterId } : {}),
-  };
+/**
+ * Plan totals per cost center for the current view, honouring effective-dated
+ * plan revisions and the Calendar Master:
+ *  - single-date view: the plan in force on that date
+ *  - month view: Σ over working days of the plan in force each day
+ * Also returns the current daily plan (for attendance %).
+ */
+async function planTotals(f: DashboardFilters) {
+  if (f.date) {
+    const daily = await dailyPlanOnDate(f.date, f);
+    const map = new Map<string, { unitId: string; planned: number; daily: number }>();
+    for (const [cc, v] of daily) map.set(cc, { unitId: v.unitId, planned: v.qty.plannedCount, daily: v.qty.plannedCount });
+    return map;
+  }
+  const totals = await monthlyPlanTotals(f.year, f.month, f);
+  const map = new Map<string, { unitId: string; planned: number; daily: number }>();
+  for (const [cc, v] of totals) map.set(cc, { unitId: v.unitId, planned: v.monthly.plannedCount, daily: v.daily.plannedCount });
+  return map;
+}
+
+function sumPlanned(map: Map<string, { planned: number; daily: number; unitId: string }>) {
+  let planned = 0;
+  let daily = 0;
+  for (const v of map.values()) { planned += v.planned; daily += v.daily; }
+  return { planned, daily };
 }
 
 function actualDateRange(f: DashboardFilters) {
+  if (f.date) {
+    const d = new Date(Date.UTC(f.date.getUTCFullYear(), f.date.getUTCMonth(), f.date.getUTCDate()));
+    return { gte: d, lte: d };
+  }
   if (f.dateFrom || f.dateTo) {
     return { gte: f.dateFrom ?? undefined, lte: f.dateTo ?? undefined };
   }
@@ -45,15 +69,17 @@ function actualWhere(f: DashboardFilters): Prisma.ManpowerActualWhereInput {
 
 export const dashboardService = {
   async kpis(f: DashboardFilters) {
-    const [planAgg, actualAgg, vendorCount, unitCount, pendingApprovals] = await Promise.all([
-      prisma.manpowerPlan.aggregate({ where: planWhere(f), _sum: { plannedCount: true } }),
+    const [plan, actualAgg, vendorCount, unitCount, pendingApprovals, wd] = await Promise.all([
+      planTotals(f),
       prisma.manpowerActual.aggregate({ where: actualWhere(f), _sum: { actualCount: true, shortage: true, excess: true } }),
       prisma.vendor.count({ where: { status: 'ACTIVE', deletedAt: null } }),
       prisma.unit.count({ where: { status: 'ACTIVE', deletedAt: null } }),
       prisma.manpowerPlan.count({ where: { status: 'PENDING', deletedAt: null } }),
+      f.date ? Promise.resolve(1) : getWorkingDays(f.year, f.month),
     ]);
+    const { planned: totalPlanned, daily: dailyPlanned } = sumPlanned(plan);
 
-    // Latest day's actual vs the monthly plan for attendance %
+    // Latest day's actual vs the DAILY plan for attendance %
     const latest = await prisma.manpowerActual.aggregate({ where: actualWhere(f), _max: { date: true } });
     let attendancePercent = 0;
     if (latest._max.date) {
@@ -61,13 +87,13 @@ export const dashboardService = {
         where: { ...actualWhere(f), date: latest._max.date },
         _sum: { actualCount: true },
       });
-      const totalPlanned = planAgg._sum.plannedCount ?? 0;
       const dayActual = latestActual._sum.actualCount ?? 0;
-      attendancePercent = totalPlanned > 0 ? Math.round((dayActual / totalPlanned) * 1000) / 10 : 0;
+      attendancePercent = dailyPlanned > 0 ? Math.round((dayActual / dailyPlanned) * 1000) / 10 : 0;
     }
 
     return {
-      totalPlanned: planAgg._sum.plannedCount ?? 0,
+      totalPlanned,
+      workingDays: wd,
       totalActual: actualAgg._sum.actualCount ?? 0,
       shortage: actualAgg._sum.shortage ?? 0,
       excess: actualAgg._sum.excess ?? 0,
@@ -81,11 +107,12 @@ export const dashboardService = {
   /** Plan vs Actual grouped by unit. */
   async planVsActualByUnit(f: DashboardFilters) {
     const units = await prisma.unit.findMany({ where: { status: 'ACTIVE', deletedAt: null }, orderBy: { code: 'asc' } });
-    const [plans, actuals] = await Promise.all([
-      prisma.manpowerPlan.groupBy({ by: ['unitId'], where: planWhere(f), _sum: { plannedCount: true } }),
+    const [plan, actuals] = await Promise.all([
+      planTotals(f),
       prisma.manpowerActual.groupBy({ by: ['unitId'], where: actualWhere(f), _sum: { actualCount: true } }),
     ]);
-    const planMap = new Map(plans.map((p) => [p.unitId, p._sum.plannedCount ?? 0]));
+    const planMap = new Map<string, number>();
+    for (const v of plan.values()) planMap.set(v.unitId, (planMap.get(v.unitId) ?? 0) + v.planned);
     const actualMap = new Map(actuals.map((a) => [a.unitId, a._sum.actualCount ?? 0]));
     return units
       .filter((u) => !f.unitId || u.id === f.unitId)
@@ -117,32 +144,38 @@ export const dashboardService = {
 
   /** Plan vs Actual for every cost center of the selected month. */
   async planVsActualByCostCenter(f: DashboardFilters) {
-    const [plans, actuals] = await Promise.all([
-      prisma.manpowerPlan.findMany({ where: planWhere(f), include: { costCenter: { include: { unit: true } } } }),
+    const [plan, actuals] = await Promise.all([
+      planTotals(f),
       prisma.manpowerActual.groupBy({ by: ['costCenterId'], where: actualWhere(f), _sum: { actualCount: true } }),
     ]);
+    const ccs = await prisma.costCenter.findMany({ where: { id: { in: [...plan.keys()] } }, include: { unit: true } });
+    const ccMap = new Map(ccs.map((c) => [c.id, c]));
     const actualMap = new Map(actuals.map((a) => [a.costCenterId, a._sum.actualCount ?? 0]));
-    return plans
-      .map((p) => ({
-        label: `${p.costCenter.unit.code}-${p.costCenter.costCode}`,
-        name: p.costCenter.costCentre,
-        planned: p.plannedCount,
-        actual: actualMap.get(p.costCenterId) ?? 0,
-      }))
+    return [...plan.entries()]
+      .map(([ccId, v]) => {
+        const cc = ccMap.get(ccId);
+        return {
+          label: cc ? `${cc.unit.code}-${cc.costCode}` : ccId,
+          name: cc?.costCentre ?? '',
+          planned: v.planned,
+          actual: actualMap.get(ccId) ?? 0,
+        };
+      })
       .sort((a, b) => b.planned - a.planned)
       .slice(0, 15);
   },
 
   async monthlyTrend(f: DashboardFilters) {
-    // Plan totals for each month of the selected year
-    const plans = await prisma.manpowerPlan.groupBy({
-      by: ['month'],
-      where: { deletedAt: null, status: 'APPROVED', year: f.year, ...(f.scopedCostCenterIds ? { costCenterId: { in: f.scopedCostCenterIds } } : {}) },
-      _sum: { plannedCount: true },
-    });
-    const planMap = new Map(plans.map((p) => [p.month, p._sum.plannedCount ?? 0]));
+    // Revision-aware plan totals for each month of the selected year
     const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return names.map((label, i) => ({ label, planned: planMap.get(i + 1) ?? 0 }));
+    const out: { label: string; planned: number }[] = [];
+    for (let m = 1; m <= 12; m++) {
+      const totals = await monthlyPlanTotals(f.year, m, { scopedCostCenterIds: f.scopedCostCenterIds });
+      let planned = 0;
+      for (const v of totals.values()) planned += v.monthly.plannedCount;
+      out.push({ label: names[m - 1], planned });
+    }
+    return out;
   },
 
   async dailyAttendanceTrend(f: DashboardFilters) {
@@ -153,7 +186,7 @@ export const dashboardService = {
       orderBy: { date: 'asc' },
     });
     return rows.map((r) => ({
-      date: r.date.toISOString().slice(0, 10),
+      date: fmtDate(r.date),
       actual: r._sum.actualCount ?? 0,
       shortage: r._sum.shortage ?? 0,
       excess: r._sum.excess ?? 0,

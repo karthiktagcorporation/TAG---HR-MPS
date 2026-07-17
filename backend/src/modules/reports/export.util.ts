@@ -1,6 +1,7 @@
 import ExcelJS from 'exceljs';
 import { Response } from 'express';
 import { ReportResult } from './report.service';
+import { fmtDateTimeIST } from '../../utils/dateFormat';
 
 /** Streams a report as a branded XLSX workbook. */
 export async function streamReportXlsx(res: Response, report: ReportResult, filterSummary: string) {
@@ -17,7 +18,8 @@ export async function streamReportXlsx(res: Response, report: ReportResult, filt
 
   ws.mergeCells(2, 1, 2, report.columns.length);
   const metaCell = ws.getCell('A2');
-  metaCell.value = `${filterSummary}  |  Generated: ${new Date().toLocaleString()}`;
+  // IST + DD/MM/YYYY — the container runs in UTC, so a plain toLocaleString showed the wrong date
+  metaCell.value = `${filterSummary}  |  Generated: ${fmtDateTimeIST()}`;
   metaCell.font = { italic: true, size: 10, color: { argb: 'FF6B7280' } };
 
   // Column headers

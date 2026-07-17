@@ -12,6 +12,7 @@ import { apiErrorMessage } from '@/services/api';
 import { actualApi } from '@/services/resources';
 import { useAuth } from '@/context/AuthContext';
 import { useCostCenters, useUnits, useVendors } from '@/hooks/useMasters';
+import { formatDate } from '@/lib/utils';
 import type { ActualGridRow, VendorAllocation } from '@/types';
 
 interface Edit {
@@ -42,17 +43,35 @@ export default function ActualsPage() {
 
   const canEnter = hasRole('SUPER_ADMIN', 'HR_ADMIN', 'USER_MASTER');
   const canDelete = user?.role === 'SUPER_ADMIN' || !!user?.canDeleteActuals;
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  // Non-admin entry window: last 3 days including today, no future dates
+  const minDate = isSuperAdmin ? undefined : dayjs().subtract(2, 'day').format('YYYY-MM-DD');
+  const maxDate = isSuperAdmin ? undefined : dayjs().format('YYYY-MM-DD');
+
+  // 'single' = entry grid for one date; 'all' = read-only list across all dates, sorted by unit
+  const [viewMode, setViewMode] = useState<'single' | 'all'>('single');
+  const allDates = viewMode === 'all';
 
   const { data: allRows = [], isLoading } = useQuery({
     queryKey: ['actual-grid', date, unitId],
     queryFn: () => actualApi.grid(date, unitId || undefined),
+    enabled: !allDates,
+  });
+
+  const { data: allList, isLoading: listLoading } = useQuery({
+    queryKey: ['actual-list-all', unitId, costCenterId],
+    queryFn: () => actualApi.list({ page: 1, pageSize: 1000, sortBy: 'unit', sortDir: 'asc', unitId: unitId || undefined, costCenterId: costCenterId || undefined }),
+    enabled: allDates,
   });
   const rows = useMemo(
     () => (costCenterId ? allRows.filter((r) => r.costCenterId === costCenterId) : allRows),
     [allRows, costCenterId],
   );
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['actual-grid'] });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['actual-grid'] });
+    qc.invalidateQueries({ queryKey: ['actual-list-all'] });
+  };
 
   const baseFor = (row: ActualGridRow): Edit => ({
     remarks: row.remarks ?? '',
@@ -75,8 +94,9 @@ export default function ActualsPage() {
       .filter((r) => isDirty(r))
       .map((r) => {
         const e = edits[r.costCenterId];
-        const dayVendors = e.dayVendors.filter((v) => v.vendorId && (v.male > 0 || v.female > 0)).map((v) => ({ vendorId: v.vendorId, male: v.male, female: v.female }));
-        const nightVendors = e.nightVendors.filter((v) => v.vendorId && (v.male > 0 || v.female > 0)).map((v) => ({ vendorId: v.vendorId, male: v.male, female: v.female }));
+        // zero counts allowed — a vendor with 0/0 records zero attendance
+        const dayVendors = e.dayVendors.filter((v) => v.vendorId).map((v) => ({ vendorId: v.vendorId, male: v.male, female: v.female }));
+        const nightVendors = e.nightVendors.filter((v) => v.vendorId).map((v) => ({ vendorId: v.vendorId, male: v.male, female: v.female }));
         if (dayVendors.length === 0 && nightVendors.length === 0) {
           skippedNoVendor.push(r.costCode);
           return null;
@@ -236,6 +256,7 @@ export default function ActualsPage() {
         subtitle="Vendor-wise day/night actual with male/female split — a vendor is required to save any entry"
         breadcrumbs={['Operations', 'Daily Actual']}
         actions={
+          allDates ? null : (
           <div className="flex flex-wrap gap-2">
             <Button variant="outline" onClick={downloadTemplate} disabled={!rows.length}><Download className="h-4 w-4" /> Template</Button>
             {canEnter && (
@@ -248,11 +269,18 @@ export default function ActualsPage() {
               </>
             )}
           </div>
+          )
         }
       />
 
       <FilterBar>
-        <Input type="date" value={date} onChange={(e) => { setDate(e.target.value); setEdits({}); }} className="w-44" />
+        <Select value={viewMode} onChange={(e) => { setViewMode(e.target.value as 'single' | 'all'); setEdits({}); }} className="w-36">
+          <option value="single">Single Date</option>
+          <option value="all">All Dates</option>
+        </Select>
+        {!allDates && (
+          <Input type="date" value={date} min={minDate} max={maxDate} onChange={(e) => { setDate(e.target.value); setEdits({}); }} className="w-44" />
+        )}
         <Select value={unitId} onChange={(e) => { setUnitId(e.target.value); setCostCenterId(''); setEdits({}); }} className="w-44">
           <option value="">All Units</option>
           {units.map((u) => <option key={u.id} value={u.id}>{u.code} — {u.name}</option>)}
@@ -261,13 +289,83 @@ export default function ActualsPage() {
           <option value="">All Cost Centers</option>
           {costCenters.map((c) => <option key={c.id} value={c.id}>{c.costCode} — {c.costCentre}{c.department ? ` - ${c.department}` : ''}</option>)}
         </Select>
+        {!allDates && (
         <div className="ml-auto flex items-center gap-3 text-sm">
           <span className="text-muted-foreground">Planned <b className="text-foreground">{totals.planned}</b></span>
           <span className="text-muted-foreground">Actual <b className="text-foreground">{totals.actual}</b></span>
           {totals.shortage > 0 && <Badge className="bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">Shortage {totals.shortage}</Badge>}
           {totals.excess > 0 && <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">Excess {totals.excess}</Badge>}
         </div>
+        )}
       </FilterBar>
+
+      {allDates && (
+        <Card>
+          {listLoading ? (
+            <LoadingState rows={8} />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/50 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    <th className="px-3 py-3">Unit</th>
+                    <th className="px-3 py-3">Date</th>
+                    <th className="px-3 py-3">Cost Centre</th>
+                    <th className="px-3 py-3">Department</th>
+                    <th className="px-3 py-3 text-right">Day</th>
+                    <th className="px-3 py-3 text-right">Night</th>
+                    <th className="px-3 py-3 text-right">Male</th>
+                    <th className="px-3 py-3 text-right">Female</th>
+                    <th className="px-3 py-3 text-right">Total</th>
+                    <th className="px-3 py-3 text-right">Shortage</th>
+                    <th className="px-3 py-3 text-right">Excess</th>
+                    <th className="px-3 py-3">Remarks</th>
+                    {canDelete && <th className="px-3 py-3" />}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(allList?.data ?? []).map((a) => (
+                    <tr key={a.id} className="border-b border-border last:border-0">
+                      <td className="px-3 py-2 font-medium">{a.unit?.code ?? '—'}</td>
+                      <td className="px-3 py-2 tabular-nums">{formatDate(a.date)}</td>
+                      <td className="px-3 py-2">
+                        <span>{a.costCenter?.costCode}</span>
+                        <span className="block text-xs text-muted-foreground">{a.costCenter?.costCentre}</span>
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">{a.costCenter?.department ?? '—'}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{a.dayActual}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{a.nightActual}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{a.maleActual}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{a.femaleActual}</td>
+                      <td className="px-3 py-2 text-right font-semibold tabular-nums">{a.actualCount}</td>
+                      <td className="px-3 py-2 text-right">
+                        {a.shortage > 0 ? <Badge className="bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300">{a.shortage}</Badge> : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {a.excess > 0 ? <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">{a.excess}</Badge> : '—'}
+                      </td>
+                      <td className="px-3 py-2 text-muted-foreground">{a.remarks ?? ''}</td>
+                      {canDelete && (
+                        <td className="px-3 py-2 text-right">
+                          <Button variant="ghost" size="icon" className="text-red-600" title="Delete this entry"
+                            onClick={() => { if (confirm(`Delete the ${formatDate(a.date)} entry for ${a.costCenter?.costCode}?`)) delMut.mutate(a.id); }}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!allList?.data.length && (
+                <div className="p-8 text-center text-sm text-muted-foreground">No entries found for this filter.</div>
+              )}
+            </div>
+          )}
+        </Card>
+      )}
+
+      {!allDates && (
 
       <Card>
         {isLoading ? (
@@ -344,6 +442,7 @@ export default function ActualsPage() {
           </div>
         )}
       </Card>
+      )}
 
       {vendorEditor && (
         <VendorAllocationModal
@@ -381,7 +480,8 @@ function VendorAllocationModal({
     setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
   const removeItem = (i: number) => setItems((prev) => prev.filter((_, idx) => idx !== i));
   const usedIds = new Set(items.map((i) => i.vendorId));
-  const cleanItems = items.filter((i) => i.vendorId && (i.male > 0 || i.female > 0));
+  // zero counts allowed — keeping a vendor at 0/0 records zero attendance
+  const cleanItems = items.filter((i) => i.vendorId);
   const totalMale = cleanItems.reduce((s, i) => s + n(i.male), 0);
   const totalFemale = cleanItems.reduce((s, i) => s + n(i.female), 0);
   const total = totalMale + totalFemale;

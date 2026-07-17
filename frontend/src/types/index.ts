@@ -148,6 +148,8 @@ export interface DashboardData {
     unitCount: number;
     attendancePercent: number;
     pendingApprovals: number;
+    /** Plan multiplier used: working days for a month view, 1 for a single date */
+    workingDays: number;
   };
   charts: {
     planVsActual: { label: string; name: string; planned: number; actual: number }[];

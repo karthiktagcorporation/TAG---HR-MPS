@@ -12,7 +12,7 @@ import { ErrorState } from '@/components/States';
 import { reportApi } from '@/services/resources';
 import { tokenStore } from '@/services/api';
 import { apiErrorMessage } from '@/services/api';
-import { MONTHS } from '@/lib/utils';
+import { MONTHS, formatDate } from '@/lib/utils';
 
 export default function ReportsPage() {
   const now = new Date();
@@ -23,7 +23,7 @@ export default function ReportsPage() {
 
   const { data: defs = [] } = useQuery({ queryKey: ['report-defs'], queryFn: () => reportApi.definitions() });
 
-  const isDaily = type === 'daily-summary';
+  const isDaily = type === 'daily-summary' || type === 'vendor-daily';
 
   const params = useMemo(
     () =>
@@ -41,10 +41,10 @@ export default function ReportsPage() {
   const columns: Column<Record<string, unknown>>[] = (data?.columns ?? []).map((c) => ({
     key: c.key,
     header: c.label,
-    align: ['actual', 'shortage', 'excess', 'planned'].includes(c.key) ? 'right' : 'left',
+    align: ['actual', 'shortage', 'excess', 'planned', 'dailyPlan', 'dayPlan', 'nightPlan', 'dayActual', 'nightActual', 'male', 'female', 'total', 'totalActual', 'attendance'].includes(c.key) ? 'right' : 'left',
   }));
 
-  const filterSummary = isDaily ? `Date: ${date}` : `Period: ${MONTHS[period.month - 1]} ${period.year}`;
+  const filterSummary = isDaily ? `Date: ${formatDate(date)}` : `Period: ${MONTHS[period.month - 1]} ${period.year}`;
 
   const downloadServerXlsx = () => {
     // Server-side branded export (authenticated fetch → blob)

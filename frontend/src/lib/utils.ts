@@ -10,6 +10,16 @@ export const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
 
+/** App-wide standard date format: DD/MM/YYYY. Accepts Date, ISO string or YYYY-MM-DD. */
+export function formatDate(d: Date | string | null | undefined) {
+  if (!d) return '—';
+  const dt = typeof d === 'string' ? new Date(d.length === 10 ? `${d}T00:00:00` : d) : d;
+  if (Number.isNaN(dt.getTime())) return String(d);
+  const dd = String(dt.getDate()).padStart(2, '0');
+  const mm = String(dt.getMonth() + 1).padStart(2, '0');
+  return `${dd}/${mm}/${dt.getFullYear()}`;
+}
+
 export function formatNumber(n: number | null | undefined) {
   return new Intl.NumberFormat('en-IN').format(n ?? 0);
 }

@@ -10,7 +10,7 @@ import {
 import { PageHeader } from '@/components/PageHeader';
 import { KpiCard } from '@/components/KpiCard';
 import { PeriodFilters, PeriodValue } from '@/components/PeriodFilters';
-import { Button, Card, CardContent, CardHeader, CardTitle } from '@/components/ui';
+import { Button, Card, CardContent, CardHeader, CardTitle, Input } from '@/components/ui';
 import { LoadingState, ErrorState, EmptyState } from '@/components/States';
 import { dashboardApi } from '@/services/resources';
 import { apiErrorMessage } from '@/services/api';
@@ -29,10 +29,12 @@ function ChartCard({ title, children, empty }: { title: string; children: React.
 export default function DashboardPage() {
   const now = new Date();
   const [period, setPeriod] = useState<PeriodValue>({ year: now.getFullYear(), month: now.getMonth() + 1 });
+  // Optional single-date view: plan becomes the daily plan, actuals for that day only
+  const [date, setDate] = useState('');
 
   const params = useMemo(
-    () => ({ year: period.year, month: period.month, unitId: period.unitId, costCenterId: period.costCenterId }),
-    [period],
+    () => ({ year: period.year, month: period.month, date: date || undefined, unitId: period.unitId, costCenterId: period.costCenterId }),
+    [period, date],
   );
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -49,6 +51,8 @@ export default function DashboardPage() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <PeriodFilters value={period} onChange={setPeriod} show={{ unit: true, costCenter: true }} />
+            <Input type="date" value={date} title="Single-date view (clear to see the full month)" onChange={(e) => setDate(e.target.value)} className="w-40" />
+            {date && <Button variant="outline" size="sm" onClick={() => setDate('')}>Clear Date</Button>}
             <Button variant="outline" size="icon" title="Refresh" onClick={() => refetch()} disabled={isLoading}>
               <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
             </Button>

@@ -8,6 +8,7 @@ import { success } from '../../utils/apiResponse';
 import { auditFromRequest } from '../../utils/audit';
 import { reportService, ReportType, ReportFilters } from './report.service';
 import { streamReportXlsx } from './export.util';
+import { fmtDate } from '../../utils/dateFormat';
 
 const router = Router();
 router.use(authenticate);
@@ -15,6 +16,7 @@ router.use(authenticate);
 const REPORT_TYPES = [
   'cost-center', 'unit', 'daily-summary', 'daily-attendance', 'monthly-summary',
   'plan-vs-actual', 'shortage', 'excess', 'consolidated',
+  'vendor-daily', 'vendor-monthly', 'vendor-consolidated',
 ] as const;
 
 const typeParam = z.object({ type: z.enum(REPORT_TYPES) });
@@ -43,8 +45,8 @@ function buildFilters(req: any): ReportFilters {
 }
 
 function filterSummary(f: ReportFilters) {
-  const parts = [`Period: ${f.month}/${f.year}`];
-  if (f.dateFrom || f.dateTo) parts.push(`Range: ${f.dateFrom?.toISOString().slice(0, 10) ?? '...'} - ${f.dateTo?.toISOString().slice(0, 10) ?? '...'}`);
+  const parts = [`Period: ${String(f.month).padStart(2, '0')}/${f.year}`];
+  if (f.dateFrom || f.dateTo) parts.push(`Range: ${f.dateFrom ? fmtDate(f.dateFrom) : '...'} - ${f.dateTo ? fmtDate(f.dateTo) : '...'}`);
   if (f.unitId) parts.push('Unit filtered');
   return parts.join('  |  ');
 }

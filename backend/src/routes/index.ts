@@ -12,6 +12,7 @@ import reportRoutes from '../modules/reports/report.routes';
 import notificationRoutes from '../modules/notifications/notification.routes';
 import auditLogRoutes from '../modules/auditLogs/auditLog.routes';
 import settingsRoutes from '../modules/settings/settings.routes';
+import calendarRoutes from '../modules/calendar/calendar.routes';
 
 const router = Router();
 
@@ -28,5 +29,6 @@ router.use('/reports', reportRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/audit-logs', auditLogRoutes);
 router.use('/settings', settingsRoutes);
+router.use('/calendar', calendarRoutes);
 
 export default router;

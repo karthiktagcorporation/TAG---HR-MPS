@@ -13,6 +13,7 @@ router.use(authenticate);
 const filterSchema = z.object({
   year: z.coerce.number().int().optional(),
   month: z.coerce.number().int().min(1).max(12).optional(),
+  date: z.coerce.date().optional(),
   dateFrom: z.coerce.date().optional(),
   dateTo: z.coerce.date().optional(),
   unitId: z.string().optional(),
@@ -24,6 +25,7 @@ function buildFilters(req: any): DashboardFilters {
   return {
     year: Number(req.query.year) || now.getFullYear(),
     month: Number(req.query.month) || now.getMonth() + 1,
+    date: req.query.date ? new Date(req.query.date) : undefined,
     dateFrom: req.query.dateFrom ? new Date(req.query.dateFrom) : undefined,
     dateTo: req.query.dateTo ? new Date(req.query.dateTo) : undefined,
     unitId: req.query.unitId || undefined,
