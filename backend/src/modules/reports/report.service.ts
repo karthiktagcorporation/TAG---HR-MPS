@@ -153,8 +153,6 @@ export const reportService = {
         actual,
         shortage,
         excess,
-        // Total Actual = monthly plan adjusted by recorded variance
-        totalActual: planned + excess - shortage,
       };
     });
     return {
@@ -164,10 +162,9 @@ export const reportService = {
         { key: 'costCentre', label: 'Cost Centre' },
         { key: 'department', label: 'Department' },
         { key: 'planned', label: 'Monthly Plan' },
-        { key: 'actual', label: 'Actual (period sum)' },
+        { key: 'actual', label: 'Total Actual' },
         { key: 'shortage', label: 'Shortage' },
         { key: 'excess', label: 'Excess' },
-        { key: 'totalActual', label: 'Total Actual' },
       ],
       rows: this.applySearch(rows, f.search),
     };
@@ -194,8 +191,6 @@ export const reportService = {
         actual,
         shortage,
         excess,
-        // Total Actual = monthly plan adjusted by recorded variance
-        totalActual: planned + excess - shortage,
       };
     });
     return {
@@ -203,10 +198,9 @@ export const reportService = {
         { key: 'unit', label: 'Unit' },
         { key: 'name', label: 'Unit Name' },
         { key: 'planned', label: 'Monthly Plan' },
-        { key: 'actual', label: 'Actual (period sum)' },
+        { key: 'actual', label: 'Total Actual' },
         { key: 'shortage', label: 'Shortage' },
         { key: 'excess', label: 'Excess' },
-        { key: 'totalActual', label: 'Total Actual' },
       ],
       rows: this.applySearch(rows, f.search),
     };
@@ -350,8 +344,6 @@ export const reportService = {
     }
     const outRows = rows.map((r) => ({
       ...r,
-      // Total Actual = plan adjusted by recorded variance (equals the actual on fully-entered days)
-      totalActual: r.planned + r.excess - r.shortage,
       attendance: attendancePct(r.actual, r.planned),
     }));
     return {
@@ -365,12 +357,11 @@ export const reportService = {
         { key: 'planned', label: mode === 'monthly' ? 'Monthly Plan' : 'Total Plan' },
         { key: 'dayActual', label: 'Day Actual' },
         { key: 'nightActual', label: 'Night Actual' },
-        { key: 'actual', label: 'Actual' },
+        { key: 'actual', label: 'Total Actual' },
         { key: 'male', label: 'Male' },
         { key: 'female', label: 'Female' },
         { key: 'shortage', label: 'Shortage' },
         { key: 'excess', label: 'Excess' },
-        { key: 'totalActual', label: 'Total Actual' },
         { key: 'attendance', label: 'Attendance %' },
       ],
       rows: this.applySearch(outRows, f.search),
