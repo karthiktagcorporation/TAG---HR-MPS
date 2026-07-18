@@ -103,13 +103,14 @@ export interface CalendarMonthRow {
   month: number;
   weeklyOffDays: number[];
   holidays: { date: string; name: string }[];
+  excludedCostCenterIds: string[];
   workingDays: number;
   remarks: string | null;
   configured: boolean;
 }
 export const calendarApi = {
   list: (year: number) => api.get('/calendar', { params: { year } }).then((r) => r.data.data as CalendarMonthRow[]),
-  save: (body: { year: number; month: number; weeklyOffDays: number[]; holidays: { date: string; name: string }[]; remarks?: string | null }) =>
+  save: (body: { year: number; month: number; weeklyOffDays: number[]; holidays: { date: string; name: string }[]; excludedCostCenterIds: string[]; remarks?: string | null }) =>
     api.put('/calendar', body).then((r) => r.data.data as CalendarMonthRow),
 };
 

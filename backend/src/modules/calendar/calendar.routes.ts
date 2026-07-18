@@ -22,6 +22,8 @@ const upsertSchema = z.object({
     .array(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), name: z.string().min(1).max(100) }))
     .max(31)
     .default([]),
+  // Cost centers that ignore this month's weekly offs/holidays entirely
+  excludedCostCenterIds: z.array(z.string()).max(500).default([]),
   remarks: z.string().max(500).optional().nullable(),
 });
 
@@ -37,7 +39,7 @@ router.get(
     const months = Array.from({ length: 12 }, (_, i) => {
       const month = i + 1;
       const row = byMonth.get(month);
-      return row ?? { id: null, year, month, weeklyOffDays: [], holidays: [], workingDays: daysInMonth(year, month), remarks: null, configured: false };
+      return row ?? { id: null, year, month, weeklyOffDays: [], holidays: [], excludedCostCenterIds: [], workingDays: daysInMonth(year, month), remarks: null, configured: false };
     }).map((r: any) => ({ ...r, configured: r.id !== null }));
     return success(res, months);
   }),
@@ -48,12 +50,12 @@ router.put(
   authorize('SUPER_ADMIN', 'HR_ADMIN'),
   validate({ body: upsertSchema }),
   asyncHandler(async (req, res) => {
-    const { year, month, weeklyOffDays, holidays, remarks } = req.body;
+    const { year, month, weeklyOffDays, holidays, excludedCostCenterIds, remarks } = req.body;
     const workingDays = computeWorkingDays(year, month, weeklyOffDays, holidays as HolidayEntry[]);
     const row = await prisma.calendarMonth.upsert({
       where: { year_month: { year, month } },
-      update: { weeklyOffDays, holidays, workingDays, remarks },
-      create: { year, month, weeklyOffDays, holidays, workingDays, remarks },
+      update: { weeklyOffDays, holidays, excludedCostCenterIds, workingDays, remarks },
+      create: { year, month, weeklyOffDays, holidays, excludedCostCenterIds, workingDays, remarks },
     });
     await auditFromRequest(req, { action: 'UPSERT', module: 'CALENDAR', entityType: 'CalendarMonth', entityId: row.id, metadata: { year, month, workingDays } });
     return success(res, row);

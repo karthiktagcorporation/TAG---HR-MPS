@@ -1,5 +1,5 @@
 import { prisma } from '../../config/prisma';
-import { getWorkingDayNumbers } from '../calendar/calendar.service';
+import { getWorkingDayNumbersForCostCenters } from '../calendar/calendar.service';
 
 /**
  * Effective-dated plan math. A plan's quantities can change mid-month via
@@ -71,18 +71,19 @@ export function qtyOnDay(revs: Rev[], year: number, month: number, day: number):
 
 /**
  * Month totals per cost center: Σ over WORKING days of the quantity in force
- * that day (Calendar Master aware). Also returns the daily quantity currently
- * in force (latest revision) for daily-plan displays.
+ * that day (Calendar Master aware — cost centers in the month's exclusion
+ * list count every day as working, ignoring weekly offs/holidays). Also
+ * returns the daily quantity currently in force (latest revision).
  */
 export async function monthlyPlanTotals(year: number, month: number, f: PlanFilters = {}) {
-  const [revMap, workingDays] = await Promise.all([
+  const [revMap, wd] = await Promise.all([
     approvedRevisionsByCostCenter(year, month, f),
-    getWorkingDayNumbers(year, month),
+    getWorkingDayNumbersForCostCenters(year, month),
   ]);
   const totals = new Map<string, { unitId: string; monthly: PlanQty; daily: PlanQty }>();
   for (const [ccId, { unitId, revs }] of revMap) {
     const monthly: PlanQty = { plannedCount: 0, dayPlan: 0, nightPlan: 0 };
-    for (const day of workingDays) {
+    for (const day of wd.forCostCenter(ccId)) {
       const q = qtyOnDay(revs, year, month, day);
       monthly.plannedCount += q.plannedCount;
       monthly.dayPlan += q.dayPlan;

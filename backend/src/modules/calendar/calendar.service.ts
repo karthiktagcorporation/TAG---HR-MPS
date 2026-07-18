@@ -54,6 +54,22 @@ export async function getWorkingDayNumbers(year: number, month: number): Promise
   return out;
 }
 
+/**
+ * Working day numbers for ONE cost center: cost centers listed in the
+ * month's excludedCostCenterIds ignore weekly offs/holidays entirely — every
+ * day of the month counts as working for them.
+ */
+export async function getWorkingDayNumbersForCostCenters(year: number, month: number) {
+  const cal = await prisma.calendarMonth.findUnique({ where: { year_month: { year, month } } });
+  const allDays = Array.from({ length: daysInMonth(year, month) }, (_, i) => i + 1);
+  const normalDays = cal ? await getWorkingDayNumbers(year, month) : allDays;
+  const excluded = new Set(cal?.excludedCostCenterIds ?? []);
+  return {
+    forCostCenter: (costCenterId: string) => (excluded.has(costCenterId) ? allDays : normalDays),
+    excluded,
+  };
+}
+
 /** Working days for a month; defaults to every day when no calendar row exists. */
 export async function getWorkingDays(year: number, month: number): Promise<number> {
   const cal = await prisma.calendarMonth.findUnique({ where: { year_month: { year, month } } });

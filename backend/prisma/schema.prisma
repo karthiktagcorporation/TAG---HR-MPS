@@ -348,6 +348,8 @@ model CalendarMonth {
   // [{ "date": "YYYY-MM-DD", "name": "Holiday name" }]
   holidays     Json     @default("[]")
   workingDays  Int // computed server-side on save
+  // Cost centers that ignore this month's weekly offs/holidays — every day counts as working for them
+  excludedCostCenterIds String[] @default([])
   remarks      String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt

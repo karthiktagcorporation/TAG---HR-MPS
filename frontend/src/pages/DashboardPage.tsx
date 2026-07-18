@@ -10,7 +10,7 @@ import {
 import { PageHeader } from '@/components/PageHeader';
 import { KpiCard } from '@/components/KpiCard';
 import { PeriodFilters, PeriodValue } from '@/components/PeriodFilters';
-import { Button, Card, CardContent, CardHeader, CardTitle, Input } from '@/components/ui';
+import { Button, Card, CardContent, CardHeader, CardTitle, Input, Select } from '@/components/ui';
 import { LoadingState, ErrorState, EmptyState } from '@/components/States';
 import { dashboardApi } from '@/services/resources';
 import { apiErrorMessage } from '@/services/api';
@@ -31,10 +31,11 @@ export default function DashboardPage() {
   const [period, setPeriod] = useState<PeriodValue>({ year: now.getFullYear(), month: now.getMonth() + 1 });
   // Optional single-date view: plan becomes the daily plan, actuals for that day only
   const [date, setDate] = useState('');
+  const [shift, setShift] = useState<'' | 'DAY' | 'NIGHT'>('');
 
   const params = useMemo(
-    () => ({ year: period.year, month: period.month, date: date || undefined, unitId: period.unitId, costCenterId: period.costCenterId }),
-    [period, date],
+    () => ({ year: period.year, month: period.month, date: date || undefined, unitId: period.unitId, costCenterId: period.costCenterId, shift: shift || undefined }),
+    [period, date, shift],
   );
 
   const { data, isLoading, isError, error, refetch } = useQuery({
@@ -51,6 +52,11 @@ export default function DashboardPage() {
         actions={
           <div className="flex flex-wrap items-center gap-2">
             <PeriodFilters value={period} onChange={setPeriod} show={{ unit: true, costCenter: true }} />
+            <Select value={shift} onChange={(e) => setShift(e.target.value as '' | 'DAY' | 'NIGHT')} className="w-36">
+              <option value="">All Shift</option>
+              <option value="DAY">Day Shift</option>
+              <option value="NIGHT">Night Shift</option>
+            </Select>
             <Input type="date" value={date} title="Single-date view (clear to see the full month)" onChange={(e) => setDate(e.target.value)} className="w-40" />
             {date && <Button variant="outline" size="sm" onClick={() => setDate('')}>Clear Date</Button>}
             <Button variant="outline" size="icon" title="Refresh" onClick={() => refetch()} disabled={isLoading}>

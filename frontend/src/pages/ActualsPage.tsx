@@ -44,6 +44,13 @@ export default function ActualsPage() {
   const canEnter = hasRole('SUPER_ADMIN', 'HR_ADMIN', 'USER_MASTER');
   const canDelete = user?.role === 'SUPER_ADMIN' || !!user?.canDeleteActuals;
   const isSuperAdmin = user?.role === 'SUPER_ADMIN';
+  // Once a SHIFT already has saved vendor data, only SUPER_ADMIN or a user
+  // granted canDeleteActuals may edit/reapply it. Day and night are saved
+  // independently within the same actual entry, so a saved Day shift must not
+  // block a still-empty Night shift (or vice versa) for a normal user.
+  const savedVendorsFor = (row: ActualGridRow, shift: 'DAY' | 'NIGHT') => (shift === 'DAY' ? row.dayVendors : row.nightVendors) ?? [];
+  const canModifyShift = (row: ActualGridRow, shift: 'DAY' | 'NIGHT') => canEnter && (savedVendorsFor(row, shift).length === 0 || canDelete);
+  const canModifyRow = (row: ActualGridRow) => canModifyShift(row, 'DAY') || canModifyShift(row, 'NIGHT');
   // Non-admin entry window: last 3 days including today, no future dates
   const minDate = isSuperAdmin ? undefined : dayjs().subtract(2, 'day').format('YYYY-MM-DD');
   const maxDate = isSuperAdmin ? undefined : dayjs().format('YYYY-MM-DD');
@@ -51,6 +58,10 @@ export default function ActualsPage() {
   // 'single' = entry grid for one date; 'all' = read-only list across all dates, sorted by unit
   const [viewMode, setViewMode] = useState<'single' | 'all'>('single');
   const allDates = viewMode === 'all';
+  // Day/Night/All shift filter — hides the other shift's columns and narrows the totals
+  const [shiftFilter, setShiftFilter] = useState<'ALL' | 'DAY' | 'NIGHT'>('ALL');
+  const showDay = shiftFilter !== 'NIGHT';
+  const showNight = shiftFilter !== 'DAY';
 
   const { data: allRows = [], isLoading } = useQuery({
     queryKey: ['actual-grid', date, unitId],
@@ -133,30 +144,39 @@ export default function ActualsPage() {
     saveMut.mutate();
   };
 
+  // planned/actual for a row, narrowed to the selected shift (ALL = combined)
+  const shiftPlanned = (row: ActualGridRow) =>
+    shiftFilter === 'DAY' ? row.dayPlan : shiftFilter === 'NIGHT' ? row.nightPlan : row.planned;
+  const shiftActualFromEdit = (e: Edit) =>
+    shiftFilter === 'DAY' ? shiftTotal(e.dayVendors) : shiftFilter === 'NIGHT' ? shiftTotal(e.nightVendors) : shiftTotal(e.dayVendors) + shiftTotal(e.nightVendors);
+  const shiftActualFromRow = (row: ActualGridRow) =>
+    shiftFilter === 'DAY' ? n(row.dayActual) : shiftFilter === 'NIGHT' ? n(row.nightActual) : n(row.actualCount);
+
   // live variance preview against total plan
   const previewVariance = (row: ActualGridRow) => {
     const e = editFor(row);
-    const total = shiftTotal(e.dayVendors) + shiftTotal(e.nightVendors);
+    const total = shiftActualFromEdit(e);
+    const planned = shiftPlanned(row);
     if (!isDirty(row) && row.actualId === null) return { shortage: null, excess: null };
-    return { shortage: Math.max(row.planned - total, 0), excess: Math.max(total - row.planned, 0) };
+    return { shortage: Math.max(planned - total, 0), excess: Math.max(total - planned, 0) };
   };
 
   const totals = useMemo(() => {
     let planned = 0; let actual = 0; let shortage = 0; let excess = 0;
     for (const r of rows) {
-      planned += r.planned;
+      planned += shiftPlanned(r);
       const e = edits[r.costCenterId];
-      const total = e ? shiftTotal(e.dayVendors) + shiftTotal(e.nightVendors) : n(r.actualCount);
+      const total = e ? shiftActualFromEdit(e) : shiftActualFromRow(r);
       const hasEntry = e ? true : r.actualId !== null;
       if (hasEntry) {
         actual += total;
-        shortage += Math.max(r.planned - total, 0);
-        excess += Math.max(total - r.planned, 0);
+        shortage += Math.max(shiftPlanned(r) - total, 0);
+        excess += Math.max(total - shiftPlanned(r), 0);
       }
     }
     return { planned, actual, shortage, excess };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, edits]);
+  }, [rows, edits, shiftFilter]);
 
   // ---- Excel import / template ----
   const downloadTemplate = () => {
@@ -229,10 +249,11 @@ export default function ActualsPage() {
     const e = editFor(row);
     const vendorRows = shift === 'DAY' ? e.dayVendors : e.nightVendors;
     const total = shiftTotal(vendorRows);
+    const locked = savedVendorsFor(row, shift).length > 0 && !canModifyShift(row, shift);
     return (
       <div className="flex items-center justify-end gap-1.5">
         <span className={`w-10 text-right tabular-nums ${total > 0 ? 'font-semibold' : 'text-muted-foreground'}`}>{total}</span>
-        {canEnter ? (
+        {canModifyShift(row, shift) ? (
           <Button
             variant="ghost"
             size="icon"
@@ -243,7 +264,9 @@ export default function ActualsPage() {
             <Users className="h-4 w-4" />
           </Button>
         ) : (
-          <Users className="h-4 w-4 text-muted-foreground/40" />
+          <span title={locked ? 'Already saved — only Super Admin or a user with delete access can edit this' : undefined}>
+            <Users className="h-4 w-4 text-muted-foreground/40" />
+          </span>
         )}
       </div>
     );
@@ -289,6 +312,13 @@ export default function ActualsPage() {
           <option value="">All Cost Centers</option>
           {costCenters.map((c) => <option key={c.id} value={c.id}>{c.costCode} — {c.costCentre}{c.department ? ` - ${c.department}` : ''}</option>)}
         </Select>
+        {!allDates && (
+          <Select value={shiftFilter} onChange={(e) => setShiftFilter(e.target.value as 'ALL' | 'DAY' | 'NIGHT')} className="w-36">
+            <option value="ALL">All Shift</option>
+            <option value="DAY">Day Shift</option>
+            <option value="NIGHT">Night Shift</option>
+          </Select>
+        )}
         {!allDates && (
         <div className="ml-auto flex items-center gap-3 text-sm">
           <span className="text-muted-foreground">Planned <b className="text-foreground">{totals.planned}</b></span>
@@ -378,10 +408,10 @@ export default function ActualsPage() {
                   <th className="px-3 py-3">Unit</th>
                   <th className="px-3 py-3">Cost Centre</th>
                   <th className="px-3 py-3">Department</th>
-                  <th className="px-3 py-3 text-right">Day Plan</th>
-                  <th className="px-3 py-3 text-right">Night Plan</th>
-                  <th className="px-3 py-3 text-right">Day Actual</th>
-                  <th className="px-3 py-3 text-right">Night Actual</th>
+                  {showDay && <th className="px-3 py-3 text-right">Day Plan</th>}
+                  {showNight && <th className="px-3 py-3 text-right">Night Plan</th>}
+                  {showDay && <th className="px-3 py-3 text-right">Day Actual</th>}
+                  {showNight && <th className="px-3 py-3 text-right">Night Actual</th>}
                   <th className="px-3 py-3 text-right">Male</th>
                   <th className="px-3 py-3 text-right">Female</th>
                   <th className="px-3 py-3 text-right">Shortage</th>
@@ -405,10 +435,10 @@ export default function ActualsPage() {
                         <span className="block text-xs text-muted-foreground">{r.costCentre}</span>
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">{r.department ?? '—'}</td>
-                      <td className="px-3 py-2 text-right">{r.dayPlan}</td>
-                      <td className="px-3 py-2 text-right">{r.nightPlan}</td>
-                      <td className="px-3 py-2">{shiftCell(r, 'DAY')}</td>
-                      <td className="px-3 py-2">{shiftCell(r, 'NIGHT')}</td>
+                      {showDay && <td className="px-3 py-2 text-right">{r.dayPlan}</td>}
+                      {showNight && <td className="px-3 py-2 text-right">{r.nightPlan}</td>}
+                      {showDay && <td className="px-3 py-2">{shiftCell(r, 'DAY')}</td>}
+                      {showNight && <td className="px-3 py-2">{shiftCell(r, 'NIGHT')}</td>}
                       <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{male}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{female}</td>
                       <td className="px-3 py-2 text-right">
@@ -418,7 +448,7 @@ export default function ActualsPage() {
                         {v.excess && v.excess > 0 ? <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">{v.excess}</Badge> : '—'}
                       </td>
                       <td className="px-3 py-2">
-                        <Input className="min-w-24" value={e.remarks} disabled={!canEnter} onChange={(ev) => setEdit(r, { remarks: ev.target.value })} />
+                        <Input className="min-w-24" value={e.remarks} disabled={!canModifyRow(r)} onChange={(ev) => setEdit(r, { remarks: ev.target.value })} />
                         {needsVendor && <span className="mt-0.5 block text-[11px] text-red-600">Add a vendor to save</span>}
                       </td>
                       {canDelete && (
@@ -449,6 +479,7 @@ export default function ActualsPage() {
           row={vendorEditor.row}
           shift={vendorEditor.shift}
           initial={vendorEditor.shift === 'DAY' ? editFor(vendorEditor.row).dayVendors : editFor(vendorEditor.row).nightVendors}
+          canDelete={canDelete}
           onClose={() => setVendorEditor(null)}
           onSave={(vendorRows) => {
             if (vendorEditor.shift === 'DAY') setEdit(vendorEditor.row, { dayVendors: vendorRows });
@@ -462,11 +493,12 @@ export default function ActualsPage() {
 }
 
 function VendorAllocationModal({
-  row, shift, initial, onClose, onSave,
+  row, shift, initial, canDelete, onClose, onSave,
 }: {
   row: ActualGridRow;
   shift: 'DAY' | 'NIGHT';
   initial: VendorAllocation[];
+  canDelete: boolean;
   onClose: () => void;
   onSave: (vendors: VendorAllocation[]) => void;
 }) {
@@ -474,11 +506,21 @@ function VendorAllocationModal({
   const [items, setItems] = useState<VendorAllocation[]>(
     initial.length ? initial.map((v) => ({ ...v })) : [{ vendorId: '', male: 0, female: 0 }],
   );
+  // Vendor rows already applied/saved can only be removed with the delete-actuals grant;
+  // freshly added, not-yet-applied rows stay freely removable.
+  const savedVendorIds = new Set(initial.map((v) => v.vendorId));
 
   const vendorName = (id: string) => vendors.find((v) => v.id === id)?.vendorName ?? '';
   const setItem = (i: number, patch: Partial<VendorAllocation>) =>
     setItems((prev) => prev.map((it, idx) => (idx === i ? { ...it, ...patch } : it)));
-  const removeItem = (i: number) => setItems((prev) => prev.filter((_, idx) => idx !== i));
+  const removeItem = (i: number) => {
+    const it = items[i];
+    if (it.vendorId && savedVendorIds.has(it.vendorId) && !canDelete) {
+      toast.error('You do not have permission to delete a saved actual entry');
+      return;
+    }
+    setItems((prev) => prev.filter((_, idx) => idx !== i));
+  };
   const usedIds = new Set(items.map((i) => i.vendorId));
   // zero counts allowed — keeping a vendor at 0/0 records zero attendance
   const cleanItems = items.filter((i) => i.vendorId);
@@ -514,7 +556,15 @@ function VendorAllocationModal({
               onChange={(e) => setItem(i, { male: e.target.value === '' ? 0 : Number(e.target.value) })} />
             <Input type="number" min={0} className="text-right" value={it.female || ''} placeholder="0"
               onChange={(e) => setItem(i, { female: e.target.value === '' ? 0 : Number(e.target.value) })} />
-            <Button variant="ghost" size="icon" className="text-red-600" onClick={() => removeItem(i)}><Trash2 className="h-4 w-4" /></Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={it.vendorId && savedVendorIds.has(it.vendorId) && !canDelete ? 'text-muted-foreground/40' : 'text-red-600'}
+              title={it.vendorId && savedVendorIds.has(it.vendorId) && !canDelete ? 'Delete-actuals permission required to remove a saved entry' : 'Remove'}
+              onClick={() => removeItem(i)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
           </div>
         ))}
       </div>

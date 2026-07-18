@@ -8,6 +8,7 @@ import { LoadingState } from '@/components/States';
 import { apiErrorMessage } from '@/services/api';
 import { calendarApi, CalendarMonthRow } from '@/services/resources';
 import { useAuth } from '@/context/AuthContext';
+import { useCostCenters } from '@/hooks/useMasters';
 import { MONTHS, formatDate } from '@/lib/utils';
 
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -73,6 +74,7 @@ export default function CalendarPage() {
                   <th className="px-3 py-3">Weekly Offs</th>
                   <th className="px-3 py-3">Holidays</th>
                   <th className="px-3 py-3 text-right">Working Days</th>
+                  <th className="px-3 py-3">Excluded Cost Centers</th>
                   <th className="px-3 py-3">Status</th>
                   {canEdit && <th className="px-3 py-3" />}
                 </tr>
@@ -91,6 +93,9 @@ export default function CalendarPage() {
                         : '—'}
                     </td>
                     <td className="px-3 py-2 text-right font-semibold tabular-nums">{m.workingDays}</td>
+                    <td className="px-3 py-2 text-muted-foreground">
+                      {m.excludedCostCenterIds.length ? `${m.excludedCostCenterIds.length} excluded` : '—'}
+                    </td>
                     <td className="px-3 py-2">
                       {m.configured
                         ? <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">Configured</Badge>
@@ -123,15 +128,23 @@ export default function CalendarPage() {
 function MonthEditor({ row, onClose, onSaved }: { row: CalendarMonthRow; onClose: () => void; onSaved: () => void }) {
   const [weeklyOffDays, setWeeklyOffDays] = useState<number[]>(row.weeklyOffDays);
   const [holidays, setHolidays] = useState<{ date: string; name: string }[]>(row.holidays);
+  const [excludedCostCenterIds, setExcludedCostCenterIds] = useState<string[]>(row.excludedCostCenterIds);
+  const [ccSearch, setCcSearch] = useState('');
   const [remarks, setRemarks] = useState(row.remarks ?? '');
   const [newDate, setNewDate] = useState('');
   const [newName, setNewName] = useState('');
+  const { data: costCenters = [] } = useCostCenters();
 
   const monthPrefix = `${row.year}-${String(row.month).padStart(2, '0')}`;
   const working = computeWorkingDays(row.year, row.month, weeklyOffDays, holidays);
+  const toggleExcluded = (id: string) =>
+    setExcludedCostCenterIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  const filteredCcs = costCenters.filter((c) =>
+    `${c.unit?.code ?? ''} ${c.costCode} ${c.costCentre} ${c.department ?? ''}`.toLowerCase().includes(ccSearch.toLowerCase()),
+  );
 
   const saveMut = useMutation({
-    mutationFn: () => calendarApi.save({ year: row.year, month: row.month, weeklyOffDays, holidays, remarks: remarks || null }),
+    mutationFn: () => calendarApi.save({ year: row.year, month: row.month, weeklyOffDays, holidays, excludedCostCenterIds, remarks: remarks || null }),
     onSuccess: () => { toast.success(`${MONTHS[row.month - 1]} ${row.year} saved — ${working} working days`); onSaved(); },
     onError: (e) => toast.error(apiErrorMessage(e)),
   });
@@ -181,6 +194,24 @@ function MonthEditor({ row, onClose, onSaved }: { row: CalendarMonthRow; onClose
             <Input placeholder="Holiday name" value={newName} onChange={(e) => setNewName(e.target.value)} />
             <Button variant="outline" onClick={addHoliday}><Plus className="h-4 w-4" /> Add</Button>
           </div>
+        </div>
+
+        <div>
+          <Label>Exclude Cost Centers from Weekly Offs / Holidays</Label>
+          <p className="mt-0.5 text-xs text-muted-foreground">Selected cost centers treat every day of the month as a working day, ignoring the weekly offs and holidays above.</p>
+          <Input placeholder="Search unit, cost code, cost centre or department..." value={ccSearch} onChange={(e) => setCcSearch(e.target.value)} className="mt-2" />
+          <div className="mt-2 max-h-48 overflow-y-auto rounded-md border border-border">
+            {filteredCcs.map((c) => (
+              <label key={c.id} className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-sm last:border-0 hover:bg-muted/50">
+                <input type="checkbox" checked={excludedCostCenterIds.includes(c.id)} onChange={() => toggleExcluded(c.id)} />
+                <span>{c.unit?.code} · {c.costCode} — {c.costCentre}{c.department ? ` - ${c.department}` : ''}</span>
+              </label>
+            ))}
+            {!filteredCcs.length && <p className="px-3 py-2 text-sm text-muted-foreground">No cost centers match.</p>}
+          </div>
+          {excludedCostCenterIds.length > 0 && (
+            <p className="mt-1 text-xs text-muted-foreground">{excludedCostCenterIds.length} cost center(s) excluded</p>
+          )}
         </div>
 
         <div>

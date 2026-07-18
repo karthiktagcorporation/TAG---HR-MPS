@@ -90,7 +90,7 @@ const DEFAULT_SETTINGS: { key: string; value: unknown }[] = [
       appName: 'TAG - MPS',
       logoUrl: '',
       address: '',
-      email: 'hr@tagcorporation.net',
+      email: 'karthikp@tagcorporation.net',
       phone: '',
     },
   },
@@ -136,15 +136,18 @@ async function main() {
   console.log(`✅ Roles seeded (${ROLES.length})`);
 
   // ---- Super Admin user ----
-  const adminEmail = process.env.SUPER_ADMIN_EMAIL ?? 'admin@tagcorporation.net';
+  // Keyed by username (stable identifier). Only the FIRST run creates the
+  // account with these defaults — later redeploys never overwrite name/email/
+  // password once an admin has edited them via the app, only role/status.
+  const adminEmail = process.env.SUPER_ADMIN_EMAIL ?? 'karthikp@tagcorporation.net';
   const adminUsername = process.env.SUPER_ADMIN_USERNAME ?? 'superadmin';
-  const adminName = process.env.SUPER_ADMIN_NAME ?? 'TAG Super Admin';
+  const adminName = process.env.SUPER_ADMIN_NAME ?? 'Karthik P';
   const adminPassword = process.env.SUPER_ADMIN_PASSWORD ?? 'ChangeMe@12345';
   const passwordHash = await bcrypt.hash(adminPassword, 12);
 
   await prisma.user.upsert({
-    where: { email: adminEmail },
-    update: { name: adminName, username: adminUsername, roleId: superAdminRole.id, status: MasterStatus.ACTIVE },
+    where: { username: adminUsername },
+    update: { roleId: superAdminRole.id, status: MasterStatus.ACTIVE },
     create: {
       name: adminName,
       username: adminUsername,
@@ -154,7 +157,7 @@ async function main() {
       status: MasterStatus.ACTIVE,
     },
   });
-  console.log(`✅ Super Admin ready: ${adminEmail} / ${adminUsername}`);
+  console.log(`✅ Super Admin ready: ${adminUsername}`);
 
   // ---- Vendors ----
   for (let i = 0; i < VENDORS.length; i++) {
@@ -197,14 +200,15 @@ async function main() {
   console.log(`✅ Cost centers seeded (${COST_CENTERS.length})`);
 
   // ---- Settings ----
-  for (const s of DEFAULT_SETTINGS) {
-    await prisma.setting.upsert({
-      where: { key: s.key },
-      update: { value: s.value as object },
-      create: { key: s.key, value: s.value as object },
-    });
+  // Only CREATE missing keys with their default value — never overwrite an
+  // existing setting, so admin edits (company profile, thresholds, etc.)
+  // survive every redeploy instead of being reset on each boot.
+  const existingSettingKeys = new Set((await prisma.setting.findMany({ select: { key: true } })).map((s) => s.key));
+  const newSettings = DEFAULT_SETTINGS.filter((s) => !existingSettingKeys.has(s.key));
+  for (const s of newSettings) {
+    await prisma.setting.create({ data: { key: s.key, value: s.value as object } });
   }
-  console.log(`✅ Settings seeded (${DEFAULT_SETTINGS.length})`);
+  console.log(`✅ Settings seeded (${newSettings.length} new, ${existingSettingKeys.size} already configured)`);
 
   if (!SEED_SAMPLE_DATA) {
     console.log('ℹ️  SEED_SAMPLE_DATA=false → skipping demo plans/actuals.');
