@@ -16,7 +16,7 @@ router.use(authenticate);
 const REPORT_TYPES = [
   'cost-center', 'unit', 'daily-summary', 'daily-attendance', 'monthly-summary',
   'plan-vs-actual', 'shortage', 'excess', 'consolidated',
-  'vendor-daily', 'vendor-monthly', 'vendor-consolidated',
+  'vendor-daily', 'vendor-monthly', 'vendor-consolidated', 'missing-entries',
 ] as const;
 
 const typeParam = z.object({ type: z.enum(REPORT_TYPES) });

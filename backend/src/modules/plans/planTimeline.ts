@@ -95,14 +95,61 @@ export async function monthlyPlanTotals(year: number, month: number, f: PlanFilt
   return totals;
 }
 
-/** Daily plan quantities in force on a specific date, per cost center. */
+/**
+ * Plan totals per cost center over an arbitrary DATE RANGE (may span months):
+ * Σ over the range's working days of the quantity in force each day, honouring
+ * the Calendar Master and per-month cost-center exclusions. Also returns the
+ * latest daily quantity in force (for attendance %).
+ */
+export async function rangePlanTotals(from: Date, to: Date, f: PlanFilters = {}) {
+  const totals = new Map<string, { unitId: string; monthly: PlanQty; daily: PlanQty }>();
+  let cursor = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth(), 1));
+  const end = new Date(Date.UTC(to.getUTCFullYear(), to.getUTCMonth(), 1));
+  while (cursor.getTime() <= end.getTime()) {
+    const year = cursor.getUTCFullYear();
+    const month = cursor.getUTCMonth() + 1;
+    const [revMap, wd] = await Promise.all([
+      approvedRevisionsByCostCenter(year, month, f),
+      getWorkingDayNumbersForCostCenters(year, month),
+    ]);
+    const dayLo = year === from.getUTCFullYear() && month === from.getUTCMonth() + 1 ? from.getUTCDate() : 1;
+    const dayHi = year === to.getUTCFullYear() && month === to.getUTCMonth() + 1 ? to.getUTCDate() : 31;
+    for (const [ccId, { unitId, revs }] of revMap) {
+      const cur = totals.get(ccId) ?? { unitId, monthly: { plannedCount: 0, dayPlan: 0, nightPlan: 0 }, daily: { plannedCount: 0, dayPlan: 0, nightPlan: 0 } };
+      for (const day of wd.forCostCenter(ccId)) {
+        if (day < dayLo || day > dayHi) continue;
+        const q = qtyOnDay(revs, year, month, day);
+        cur.monthly.plannedCount += q.plannedCount;
+        cur.monthly.dayPlan += q.dayPlan;
+        cur.monthly.nightPlan += q.nightPlan;
+      }
+      const last = revs[revs.length - 1];
+      cur.daily = { plannedCount: last.plannedCount, dayPlan: last.dayPlan, nightPlan: last.nightPlan };
+      totals.set(ccId, cur);
+    }
+    cursor = new Date(Date.UTC(year, month, 1));
+  }
+  return totals;
+}
+
+/**
+ * Daily plan quantities in force on a specific date, per cost center —
+ * Calendar-Master aware: on a weekly-off/holiday, plan is 0 UNLESS the cost
+ * center is in that month's exclusion list (e.g. Security roles that work
+ * every day). Unconfigured months treat every day as working, same as before.
+ */
 export async function dailyPlanOnDate(date: Date, f: PlanFilters = {}) {
   const year = date.getUTCFullYear();
   const month = date.getUTCMonth() + 1;
-  const revMap = await approvedRevisionsByCostCenter(year, month, f);
+  const day = date.getUTCDate();
+  const [revMap, wd] = await Promise.all([
+    approvedRevisionsByCostCenter(year, month, f),
+    getWorkingDayNumbersForCostCenters(year, month),
+  ]);
   const out = new Map<string, { unitId: string; qty: PlanQty }>();
   for (const [ccId, { unitId, revs }] of revMap) {
-    out.set(ccId, { unitId, qty: qtyOnDay(revs, year, month, date.getUTCDate()) });
+    const isWorkingDay = wd.forCostCenter(ccId).includes(day);
+    out.set(ccId, { unitId, qty: isWorkingDay ? qtyOnDay(revs, year, month, day) : ZERO });
   }
   return out;
 }

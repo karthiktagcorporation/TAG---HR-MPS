@@ -10,6 +10,7 @@ import CalendarPage from '@/pages/masters/CalendarPage';
 import PlansPage from '@/pages/PlansPage';
 import ActualsPage from '@/pages/ActualsPage';
 import VariancePage from '@/pages/VariancePage';
+import MissingEntriesPage from '@/pages/MissingEntriesPage';
 import ReportsPage from '@/pages/ReportsPage';
 import UsersPage from '@/pages/admin/UsersPage';
 import AuditLogsPage from '@/pages/admin/AuditLogsPage';
@@ -32,6 +33,7 @@ const router = createBrowserRouter([
       { path: 'plans', element: <RoleRoute roles={['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT']}><PlansPage /></RoleRoute> },
       { path: 'actuals', element: <RoleRoute roles={['SUPER_ADMIN', 'HR_ADMIN', 'USER_MASTER']}><ActualsPage /></RoleRoute> },
       { path: 'variance', element: <RoleRoute roles={['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT']}><VariancePage /></RoleRoute> },
+      { path: 'missing-entries', element: <RoleRoute roles={['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT', 'USER_MASTER']}><MissingEntriesPage /></RoleRoute> },
       { path: 'reports', element: <ReportsPage /> },
       { path: 'masters/vendors', element: <RoleRoute roles={['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT']}><VendorsPage /></RoleRoute> },
       { path: 'masters/units', element: <RoleRoute roles={['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT']}><UnitsPage /></RoleRoute> },

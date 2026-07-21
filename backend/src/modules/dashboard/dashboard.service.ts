@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { getWorkingDays } from '../calendar/calendar.service';
-import { monthlyPlanTotals, dailyPlanOnDate } from '../plans/planTimeline';
+import { monthlyPlanTotals, dailyPlanOnDate, rangePlanTotals } from '../plans/planTimeline';
 import { fmtDate } from '../../utils/dateFormat';
 
 export interface DashboardFilters {
@@ -39,6 +39,15 @@ async function planTotals(f: DashboardFilters) {
     const daily = await dailyPlanOnDate(f.date, f);
     const map = new Map<string, { unitId: string; planned: number; daily: number }>();
     for (const [cc, v] of daily) map.set(cc, { unitId: v.unitId, planned: v.qty[field], daily: v.qty[field] });
+    return map;
+  }
+  // Date-range view: Σ over the range's working days (Calendar Master aware)
+  if (f.dateFrom || f.dateTo) {
+    const from = f.dateFrom ?? new Date(Date.UTC(f.year, f.month - 1, 1));
+    const to = f.dateTo ?? new Date(Date.UTC(f.year, f.month, 0));
+    const totals = await rangePlanTotals(from, to, f);
+    const map = new Map<string, { unitId: string; planned: number; daily: number }>();
+    for (const [cc, v] of totals) map.set(cc, { unitId: v.unitId, planned: v.monthly[field], daily: v.daily[field] });
     return map;
   }
   const totals = await monthlyPlanTotals(f.year, f.month, f);

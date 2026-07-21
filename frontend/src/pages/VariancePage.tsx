@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import dayjs from 'dayjs';
 import { TrendingDown, TrendingUp, Users, UserCheck } from 'lucide-react';
 import { PageHeader } from '@/components/PageHeader';
 import { FilterBar } from '@/components/FilterBar';
@@ -7,20 +8,30 @@ import { PeriodFilters, PeriodValue } from '@/components/PeriodFilters';
 import { KpiCard } from '@/components/KpiCard';
 import { DataTable, Column } from '@/components/DataTable';
 import { ExportActions } from '@/components/ExportActions';
-import { Badge, Card } from '@/components/ui';
+import { Badge, Button, Card, Input } from '@/components/ui';
 import { dashboardApi, reportApi } from '@/services/resources';
-import { MONTHS } from '@/lib/utils';
+import { MONTHS, formatDate } from '@/lib/utils';
 
 export default function VariancePage() {
   const now = new Date();
   const [period, setPeriod] = useState<PeriodValue>({ year: now.getFullYear(), month: now.getMonth() + 1 });
-  const params = useMemo(
-    () => ({ year: period.year, month: period.month, unitId: period.unitId, costCenterId: period.costCenterId }),
-    [period],
+  // Optional single-date view: plan narrows to that day's plan, actuals for that day only
+  const [date, setDate] = useState('');
+
+  const dashParams = useMemo(
+    () => ({ year: period.year, month: period.month, date: date || undefined, unitId: period.unitId, costCenterId: period.costCenterId }),
+    [period, date],
+  );
+  const reportParams = useMemo(
+    () =>
+      date
+        ? { year: period.year, month: period.month, dateFrom: date, dateTo: date, unitId: period.unitId, costCenterId: period.costCenterId }
+        : { year: period.year, month: period.month, unitId: period.unitId, costCenterId: period.costCenterId },
+    [period, date],
   );
 
-  const { data: dash } = useQuery({ queryKey: ['variance-kpi', params], queryFn: () => dashboardApi.full(params) });
-  const { data: report, isLoading } = useQuery({ queryKey: ['variance-report', params], queryFn: () => reportApi.build('cost-center', params) });
+  const { data: dash } = useQuery({ queryKey: ['variance-kpi', dashParams], queryFn: () => dashboardApi.full(dashParams) });
+  const { data: report, isLoading } = useQuery({ queryKey: ['variance-report', reportParams], queryFn: () => reportApi.build('cost-center', reportParams) });
 
   const columns: Column<Record<string, unknown>>[] = (report?.columns ?? []).map((c) => ({
     key: c.key,
@@ -39,11 +50,13 @@ export default function VariancePage() {
         title="Variance Analysis"
         subtitle="Planned vs Actual shortage / excess by cost center"
         breadcrumbs={['Operations', 'Variance']}
-        actions={<ExportActions filename="variance" title="Variance Analysis" columns={report?.columns ?? []} rows={report?.rows ?? []} filterSummary={`${MONTHS[period.month - 1]} ${period.year}`} disabled={!report?.rows.length} />}
+        actions={<ExportActions filename="variance" title="Variance Analysis" columns={report?.columns ?? []} rows={report?.rows ?? []} filterSummary={date ? formatDate(date) : `${MONTHS[period.month - 1]} ${period.year}`} disabled={!report?.rows.length} />}
       />
 
       <FilterBar>
-        <PeriodFilters value={period} onChange={setPeriod} show={{ unit: true, costCenter: true }} />
+        <PeriodFilters value={period} onChange={(v) => { setPeriod(v); }} show={{ unit: true, costCenter: true }} />
+        <Input type="date" value={date} title="Single-date view (clear to see the full month)" onChange={(e) => setDate(e.target.value)} className="w-40" />
+        {date && <Button variant="outline" size="sm" onClick={() => setDate('')}>Clear Date</Button>}
       </FilterBar>
 
       {dash && (

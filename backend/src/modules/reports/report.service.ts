@@ -1,7 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '../../config/prisma';
 import { BadRequestError } from '../../utils/errors';
-import { monthlyPlanTotals, dailyPlanOnDate, approvedRevisionsByCostCenter, qtyOnDay } from '../plans/planTimeline';
+import { monthlyPlanTotals, dailyPlanOnDate, approvedRevisionsByCostCenter, qtyOnDay, PlanQty } from '../plans/planTimeline';
 import { fmtDate } from '../../utils/dateFormat';
 
 export type ReportType =
@@ -16,7 +16,8 @@ export type ReportType =
   | 'consolidated'
   | 'vendor-daily'
   | 'vendor-monthly'
-  | 'vendor-consolidated';
+  | 'vendor-consolidated'
+  | 'missing-entries';
 
 /** Attendance % of actual vs plan, one decimal; '—' when there is no plan. */
 function attendancePct(actual: number, planned: number) {
@@ -75,6 +76,21 @@ function planWhere(f: ReportFilters): Prisma.ManpowerPlanWhereInput {
   };
 }
 
+/**
+ * Plan totals honouring a single-date filter (dateFrom === dateTo): uses the
+ * Calendar-Master-aware plan for that exact date, not the whole month's sum.
+ * Falls back to the month total otherwise.
+ */
+async function planTotalsForFilters(f: ReportFilters) {
+  if (f.dateFrom && f.dateTo && f.dateFrom.getTime() === f.dateTo.getTime()) {
+    const daily = await dailyPlanOnDate(f.dateFrom, f);
+    const map = new Map<string, { unitId: string; monthly: PlanQty }>();
+    for (const [cc, v] of daily) map.set(cc, { unitId: v.unitId, monthly: v.qty });
+    return map;
+  }
+  return monthlyPlanTotals(f.year, f.month, f);
+}
+
 const REPORT_TITLES: Record<ReportType, string> = {
   'cost-center': 'Cost Center Report',
   unit: 'Unit Report',
@@ -88,6 +104,7 @@ const REPORT_TITLES: Record<ReportType, string> = {
   'vendor-daily': 'Vendor Summary (Daily)',
   'vendor-monthly': 'Vendor Summary (Monthly)',
   'vendor-consolidated': 'Vendor Summary (Consolidated)',
+  'missing-entries': 'Missing Daily Actual Entries',
 };
 
 export const reportService = {
@@ -122,6 +139,8 @@ export const reportService = {
         return { type, title, ...(await this.vendorSummary(f, 'monthly')) };
       case 'vendor-consolidated':
         return { type, title, ...(await this.vendorSummary(f, 'consolidated')) };
+      case 'missing-entries':
+        return { type, title, ...(await this.missingEntries(f)) };
       default:
         throw new BadRequestError(`Unknown report type: ${type}`);
     }
@@ -134,27 +153,48 @@ export const reportService = {
         where: actualWhere(f),
         _sum: { actualCount: true, shortage: true, excess: true },
       }),
-      monthlyPlanTotals(f.year, f.month, f),
+      planTotalsForFilters(f),
     ]);
-    const ccs = await prisma.costCenter.findMany({ where: { id: { in: grouped.map((g) => g.costCenterId) } }, include: { unit: true } });
+    // Include cost centers that have a plan but no entries at all — they show
+    // actual 0 with the full plan as shortage instead of disappearing.
+    const groupedIds = new Set(grouped.map((g) => g.costCenterId));
+    const planOnlyIds = [...planTotals.entries()].filter(([id, v]) => !groupedIds.has(id) && v.monthly.plannedCount > 0).map(([id]) => id);
+    const allIds = [...groupedIds, ...planOnlyIds];
+    const ccs = await prisma.costCenter.findMany({ where: { id: { in: allIds } }, include: { unit: true } });
     const map = new Map(ccs.map((c) => [c.id, c]));
-    const rows = grouped.map((g) => {
-      const cc = map.get(g.costCenterId);
-      const actual = g._sum.actualCount ?? 0;
-      const shortage = g._sum.shortage ?? 0;
-      const excess = g._sum.excess ?? 0;
-      const planned = planTotals.get(g.costCenterId)?.monthly.plannedCount ?? 0;
-      return {
-        unit: cc?.unit.code ?? '',
-        costCode: cc?.costCode ?? '',
-        costCentre: cc?.costCentre ?? '',
-        department: cc?.department ?? '',
-        planned,
-        actual,
-        shortage,
-        excess,
-      };
-    });
+    const rows = [
+      ...grouped.map((g) => {
+        const cc = map.get(g.costCenterId);
+        const actual = g._sum.actualCount ?? 0;
+        const shortage = g._sum.shortage ?? 0;
+        const excess = g._sum.excess ?? 0;
+        const planned = planTotals.get(g.costCenterId)?.monthly.plannedCount ?? 0;
+        return {
+          unit: cc?.unit.code ?? '',
+          costCode: cc?.costCode ?? '',
+          costCentre: cc?.costCentre ?? '',
+          department: cc?.department ?? '',
+          planned,
+          actual,
+          shortage,
+          excess,
+        };
+      }),
+      ...planOnlyIds.map((id) => {
+        const cc = map.get(id);
+        const planned = planTotals.get(id)!.monthly.plannedCount;
+        return {
+          unit: cc?.unit.code ?? '',
+          costCode: cc?.costCode ?? '',
+          costCentre: cc?.costCentre ?? '',
+          department: cc?.department ?? '',
+          planned,
+          actual: 0,
+          shortage: planned,
+          excess: 0,
+        };
+      }),
+    ].sort((a, b) => a.unit.localeCompare(b.unit) || a.costCode.localeCompare(b.costCode));
     return {
       columns: [
         { key: 'unit', label: 'Unit' },
@@ -173,7 +213,7 @@ export const reportService = {
   async byUnit(f: ReportFilters) {
     const [grouped, planTotals] = await Promise.all([
       prisma.manpowerActual.groupBy({ by: ['unitId'], where: actualWhere(f), _sum: { actualCount: true, shortage: true, excess: true } }),
-      monthlyPlanTotals(f.year, f.month, f),
+      planTotalsForFilters(f),
     ]);
     const planMap = new Map<string, number>();
     for (const v of planTotals.values()) planMap.set(v.unitId, (planMap.get(v.unitId) ?? 0) + v.monthly.plannedCount);
@@ -548,6 +588,90 @@ export const reportService = {
       { key: 'total', label: 'Total Count' },
     ];
     return { columns, rows: this.applySearch(rows, f.search) };
+  },
+
+  /**
+   * Cost centers whose daily actual has NOT been entered yet, for every date
+   * in the selected range (dateFrom..dateTo, default today) — one row per
+   * missing shift per date. A shift counts as missing when it has a plan (> 0)
+   * in force that day but the entry has no saved vendors for it. Calendar-
+   * aware: no plan on a weekly-off/holiday means nothing is expected (unless
+   * the cost center is excluded from the calendar). Future dates are skipped.
+   */
+  async missingEntries(f: ReportFilters) {
+    const utcDay = (d: Date) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    const today = utcDay(new Date());
+    const from = utcDay(f.dateFrom ?? new Date());
+    let to = utcDay(f.dateTo ?? f.dateFrom ?? new Date());
+    if (to.getTime() > today.getTime()) to = today; // nothing can be "missing" in the future
+    // hard cap: 92 days per request
+    const maxTo = new Date(from.getTime() + 91 * 86400000);
+    if (to.getTime() > maxTo.getTime()) to = maxTo;
+
+    const actuals = from.getTime() <= to.getTime()
+      ? await prisma.manpowerActual.findMany({
+          where: { date: { gte: from, lte: to }, deletedAt: null },
+          select: { costCenterId: true, date: true, vendorAllocations: { select: { shift: true } } },
+        })
+      : [];
+    const savedByKey = new Map<string, Set<string>>();
+    for (const a of actuals) {
+      const key = `${a.costCenterId}|${a.date.toISOString().slice(0, 10)}`;
+      const set = savedByKey.get(key) ?? new Set<string>();
+      for (const v of a.vendorAllocations) set.add(v.shift);
+      savedByKey.set(key, set);
+    }
+
+    type Row = { unit: string; costCode: string; costCentre: string; department: string; date: string; shift: string; planned: number; actual: string; _sort: string };
+    const rows: Row[] = [];
+    const ccMap = new Map<string, { unit: { code: string }; costCode: string; costCentre: string; department: string | null }>();
+    for (let t = from.getTime(); t <= to.getTime(); t += 86400000) {
+      const date = new Date(t);
+      // plan differs per date (working days + revisions), so compute per date
+      const planMap = await dailyPlanOnDate(date, f);
+      const newIds = [...planMap.keys()].filter((id) => !ccMap.has(id));
+      if (newIds.length) {
+        const ccs = await prisma.costCenter.findMany({ where: { id: { in: newIds } }, include: { unit: true } });
+        for (const c of ccs) ccMap.set(c.id, c);
+      }
+      for (const [ccId, v] of planMap) {
+        const cc = ccMap.get(ccId);
+        if (!cc) continue;
+        const savedShifts = savedByKey.get(`${ccId}|${date.toISOString().slice(0, 10)}`) ?? new Set<string>();
+        const checkShift = (shift: 'DAY' | 'NIGHT', planned: number) => {
+          if (planned <= 0) return; // nothing expected for this shift that day
+          if (savedShifts.has(shift)) return; // already entered
+          rows.push({
+            unit: cc.unit.code,
+            costCode: cc.costCode,
+            costCentre: cc.costCentre,
+            department: cc.department ?? '',
+            date: fmtDate(date),
+            shift: shift === 'DAY' ? 'Day' : 'Night',
+            planned,
+            actual: 'Not Entered',
+            _sort: date.toISOString().slice(0, 10),
+          });
+        };
+        checkShift('DAY', v.qty.dayPlan);
+        checkShift('NIGHT', v.qty.nightPlan);
+      }
+    }
+    rows.sort((a, b) => a.unit.localeCompare(b.unit) || a.costCode.localeCompare(b.costCode) || a._sort.localeCompare(b._sort) || a.shift.localeCompare(b.shift));
+    rows.forEach((r) => delete (r as Partial<Row>)._sort);
+    return {
+      columns: [
+        { key: 'unit', label: 'Unit' },
+        { key: 'costCode', label: 'Cost Code' },
+        { key: 'costCentre', label: 'Cost Centre' },
+        { key: 'department', label: 'Department' },
+        { key: 'date', label: 'Date' },
+        { key: 'shift', label: 'Shift' },
+        { key: 'planned', label: 'Plan' },
+        { key: 'actual', label: 'Actual' },
+      ],
+      rows: this.applySearch(rows, f.search),
+    };
   },
 
   applySearch(rows: Record<string, unknown>[], search?: string) {

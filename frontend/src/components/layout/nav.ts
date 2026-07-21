@@ -6,6 +6,7 @@ import {
   ClipboardList,
   CalendarCheck,
   CalendarDays,
+  CalendarX2,
   GitCompareArrows,
   FileBarChart,
   Users,
@@ -32,6 +33,7 @@ export const NAV_ITEMS: NavItem[] = [
   { label: 'Manpower Plan', to: '/plans', icon: ClipboardList, roles: ['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT'], section: 'Operations' },
   { label: 'Daily Actual', to: '/actuals', icon: CalendarCheck, roles: ['SUPER_ADMIN', 'HR_ADMIN', 'USER_MASTER'], section: 'Operations' },
   { label: 'Variance Analysis', to: '/variance', icon: GitCompareArrows, roles: ['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT'], section: 'Operations' },
+  { label: 'Missing Entries', to: '/missing-entries', icon: CalendarX2, roles: ALL, section: 'Operations' },
   { label: 'Reports', to: '/reports', icon: FileBarChart, roles: ALL, section: 'Operations' },
 
   { label: 'Vendors', to: '/masters/vendors', icon: Building2, roles: ['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT'], section: 'Masters' },

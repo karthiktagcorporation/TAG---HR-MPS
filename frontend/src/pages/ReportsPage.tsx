@@ -23,7 +23,7 @@ export default function ReportsPage() {
 
   const { data: defs = [] } = useQuery({ queryKey: ['report-defs'], queryFn: () => reportApi.definitions() });
 
-  const isDaily = type === 'daily-summary' || type === 'vendor-daily';
+  const isDaily = type === 'daily-summary' || type === 'vendor-daily' || type === 'missing-entries';
 
   const params = useMemo(
     () =>

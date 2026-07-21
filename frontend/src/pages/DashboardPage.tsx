@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import dayjs from 'dayjs';
 import {
   Users, UserCheck, TrendingDown, TrendingUp, Building2, Boxes, Percent, ClipboardCheck, RefreshCw,
 } from 'lucide-react';
@@ -28,13 +29,20 @@ function ChartCard({ title, children, empty }: { title: string; children: React.
 
 export default function DashboardPage() {
   const now = new Date();
+  const today = dayjs().format('YYYY-MM-DD');
   const [period, setPeriod] = useState<PeriodValue>({ year: now.getFullYear(), month: now.getMonth() + 1 });
-  // Optional single-date view: plan becomes the daily plan, actuals for that day only
-  const [date, setDate] = useState('');
+  const [date, setDate] = useState(today);
   const [shift, setShift] = useState<'' | 'DAY' | 'NIGHT'>('');
 
   const params = useMemo(
-    () => ({ year: period.year, month: period.month, date: date || undefined, unitId: period.unitId, costCenterId: period.costCenterId, shift: shift || undefined }),
+    () => ({
+      year: period.year,
+      month: period.month,
+      date: date || undefined,
+      unitId: period.unitId,
+      costCenterId: period.costCenterId,
+      shift: shift || undefined,
+    }),
     [period, date, shift],
   );
 
@@ -57,8 +65,10 @@ export default function DashboardPage() {
               <option value="DAY">Day Shift</option>
               <option value="NIGHT">Night Shift</option>
             </Select>
-            <Input type="date" value={date} title="Single-date view (clear to see the full month)" onChange={(e) => setDate(e.target.value)} className="w-40" />
-            {date && <Button variant="outline" size="sm" onClick={() => setDate('')}>Clear Date</Button>}
+            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-40" />
+            {date && (
+              <Button variant="outline" size="sm" title="Show the full month" onClick={() => setDate('')}>Clear Date</Button>
+            )}
             <Button variant="outline" size="icon" title="Refresh" onClick={() => refetch()} disabled={isLoading}>
               <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
             </Button>
