@@ -33,6 +33,7 @@ export interface ReportFilters {
   costCenterId?: string;
   search?: string;
   scopedCostCenterIds?: string[] | null;
+  shift?: 'DAY' | 'NIGHT';
 }
 
 export interface ReportColumn {
@@ -653,8 +654,8 @@ export const reportService = {
             _sort: date.toISOString().slice(0, 10),
           });
         };
-        checkShift('DAY', v.qty.dayPlan);
-        checkShift('NIGHT', v.qty.nightPlan);
+        if (!f.shift || f.shift === 'DAY') checkShift('DAY', v.qty.dayPlan);
+        if (!f.shift || f.shift === 'NIGHT') checkShift('NIGHT', v.qty.nightPlan);
       }
     }
     rows.sort((a, b) => a.unit.localeCompare(b.unit) || a.costCode.localeCompare(b.costCode) || a._sort.localeCompare(b._sort) || a.shift.localeCompare(b.shift));

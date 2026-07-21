@@ -18,6 +18,7 @@ export default function MissingEntriesPage() {
   const [dateTo, setDateTo] = useState(today);
   const [unitId, setUnitId] = useState('');
   const [costCenterId, setCostCenterId] = useState('');
+  const [shift, setShift] = useState<'' | 'DAY' | 'NIGHT'>('');
   const [search, setSearch] = useState('');
   const { data: units = [] } = useUnits();
   const { data: costCenters = [] } = useCostCenters(unitId || undefined);
@@ -40,8 +41,8 @@ export default function MissingEntriesPage() {
   }));
 
   const params = useMemo(
-    () => ({ dateFrom, dateTo, unitId: unitId || undefined, costCenterId: costCenterId || undefined, search: search || undefined }),
-    [dateFrom, dateTo, unitId, costCenterId, search],
+    () => ({ dateFrom, dateTo, unitId: unitId || undefined, costCenterId: costCenterId || undefined, shift: shift || undefined, search: search || undefined }),
+    [dateFrom, dateTo, unitId, costCenterId, shift, search],
   );
 
   const { data, isLoading } = useQuery({
@@ -92,6 +93,11 @@ export default function MissingEntriesPage() {
         <Select value={costCenterId} onChange={(e) => setCostCenterId(e.target.value)} className="w-56">
           <option value="">All Cost Centers</option>
           {costCenters.map((c) => <option key={c.id} value={c.id}>{c.costCode} — {c.costCentre}{c.department ? ` - ${c.department}` : ''}</option>)}
+        </Select>
+        <Select value={shift} onChange={(e) => setShift(e.target.value as '' | 'DAY' | 'NIGHT')} className="w-36">
+          <option value="">All Shift</option>
+          <option value="DAY">Day Shift</option>
+          <option value="NIGHT">Night Shift</option>
         </Select>
       </FilterBar>
 

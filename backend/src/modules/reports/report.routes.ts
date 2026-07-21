@@ -28,6 +28,7 @@ const filterSchema = z.object({
   unitId: z.string().optional(),
   costCenterId: z.string().optional(),
   search: z.string().optional(),
+  shift: z.enum(['DAY', 'NIGHT']).optional(),
 });
 
 function buildFilters(req: any): ReportFilters {
@@ -40,6 +41,7 @@ function buildFilters(req: any): ReportFilters {
     unitId: req.query.unitId || undefined,
     costCenterId: req.query.costCenterId || undefined,
     search: req.query.search || undefined,
+    shift: req.query.shift || undefined,
     scopedCostCenterIds: allowedCostCenterIds(req),
   };
 }
