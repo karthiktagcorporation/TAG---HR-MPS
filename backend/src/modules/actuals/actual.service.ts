@@ -61,6 +61,7 @@ export const actualService = {
       ...(scopedCostCenterIds ? { costCenterId: { in: scopedCostCenterIds } } : {}),
       ...(filters.unitId ? { unitId: String(filters.unitId) } : {}),
       ...(filters.costCenterId ? { costCenterId: String(filters.costCenterId) } : {}),
+      ...(filters.categoryId ? { costCenter: { categoryId: String(filters.categoryId) } } : {}),
       ...(filters.dateFrom || filters.dateTo
         ? {
             date: {
@@ -84,15 +85,16 @@ export const actualService = {
    * Grid view for a date: one row per cost center (scoped for USER_MASTER),
    * with the approved plan (day/night split) and any existing entry merged in.
    */
-  async grid(date: Date, scopedCostCenterIds: string[] | null, unitId?: string) {
+  async grid(date: Date, scopedCostCenterIds: string[] | null, unitId?: string, categoryId?: string) {
     const costCenters = await prisma.costCenter.findMany({
       where: {
         deletedAt: null,
         status: 'ACTIVE',
         ...(scopedCostCenterIds ? { id: { in: scopedCostCenterIds } } : {}),
         ...(unitId ? { unitId } : {}),
+        ...(categoryId ? { categoryId } : {}),
       },
-      include: { unit: true },
+      include: { unit: true, category: true },
       orderBy: [{ unit: { code: 'asc' } }, { costCode: 'asc' }],
     });
     const [planMap, actuals] = await Promise.all([
@@ -118,6 +120,7 @@ export const actualService = {
         costCode: cc.costCode,
         costCentre: cc.costCentre,
         department: cc.department ?? null,
+        category: cc.category?.name ?? null,
         planned: plan?.plannedCount ?? 0,
         dayPlan: plan?.dayPlan ?? 0,
         nightPlan: plan?.nightPlan ?? 0,

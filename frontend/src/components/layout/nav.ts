@@ -2,6 +2,7 @@ import {
   LayoutDashboard,
   Building2,
   Boxes,
+  Tags,
   Network,
   ClipboardList,
   CalendarCheck,
@@ -38,6 +39,7 @@ export const NAV_ITEMS: NavItem[] = [
 
   { label: 'Vendors', to: '/masters/vendors', icon: Building2, roles: ['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT'], section: 'Masters' },
   { label: 'Units', to: '/masters/units', icon: Boxes, roles: ['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT'], section: 'Masters' },
+  { label: 'Categories', to: '/masters/categories', icon: Tags, roles: ['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT'], section: 'Masters' },
   { label: 'Cost Centers', to: '/masters/cost-centers', icon: Network, roles: ['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT'], section: 'Masters' },
   { label: 'Calendar', to: '/masters/calendar', icon: CalendarDays, roles: ['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT'], section: 'Masters' },
 

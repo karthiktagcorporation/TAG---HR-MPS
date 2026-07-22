@@ -39,8 +39,8 @@ router.get(
   authorize('SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT'),
   validate({ query: gridQuerySchema }),
   asyncHandler(async (req, res) => {
-    const { year, month, unitId } = req.query as any;
-    return success(res, await planService.grid(Number(year), Number(month), unitId));
+    const { year, month, unitId, categoryId } = req.query as any;
+    return success(res, await planService.grid(Number(year), Number(month), unitId, categoryId));
   }),
 );
 

@@ -14,9 +14,10 @@ const router = Router();
 router.use(authenticate);
 
 const REPORT_TYPES = [
-  'cost-center', 'unit', 'daily-summary', 'daily-attendance', 'monthly-summary',
+  'cost-center', 'unit', 'daily-summary', 'daily-summary-day', 'daily-summary-night', 'daily-attendance', 'monthly-summary',
   'plan-vs-actual', 'shortage', 'excess', 'consolidated',
   'vendor-daily', 'vendor-monthly', 'vendor-consolidated', 'missing-entries',
+  'category-daily', 'category-monthly',
 ] as const;
 
 const typeParam = z.object({ type: z.enum(REPORT_TYPES) });
@@ -27,6 +28,7 @@ const filterSchema = z.object({
   dateTo: z.coerce.date().optional(),
   unitId: z.string().optional(),
   costCenterId: z.string().optional(),
+  categoryId: z.string().optional(),
   search: z.string().optional(),
   shift: z.enum(['DAY', 'NIGHT']).optional(),
 });
@@ -40,6 +42,7 @@ function buildFilters(req: any): ReportFilters {
     dateTo: req.query.dateTo ? new Date(req.query.dateTo) : undefined,
     unitId: req.query.unitId || undefined,
     costCenterId: req.query.costCenterId || undefined,
+    categoryId: req.query.categoryId || undefined,
     search: req.query.search || undefined,
     shift: req.query.shift || undefined,
     scopedCostCenterIds: allowedCostCenterIds(req),

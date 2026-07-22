@@ -69,14 +69,42 @@ export function exportToPdf(p: ExportPayload) {
   doc.text(stamp, 40, 70);
 
   const { head, body } = asMatrix(p);
+  // Column-specific header tint so Plan/Actual/Attendance stand out
+  const HEADER_TINT: Record<string, [number, number, number]> = { planned: [30, 64, 175], actual: [21, 128, 61], attendance: [109, 40, 217] };
+  const SHIFT_COLOR: Record<string, [number, number, number]> = { Day: [3, 105, 161], Night: [79, 70, 229] };
+  const CELL_COLOR: Record<string, [number, number, number]> = { planned: [30, 58, 138], actual: [21, 128, 61], attendance: [109, 40, 217] };
   autoTable(doc, {
     head: [head],
     body: body as never,
     startY: 80,
     styles: { fontSize: 8, cellPadding: 4 },
-    headStyles: { fillColor: [30, 58, 138], textColor: 255, fontStyle: 'bold' },
+    headStyles: { fillColor: [30, 58, 138], textColor: 255, fontStyle: 'bold', halign: 'center' },
     alternateRowStyles: { fillColor: [243, 246, 252] },
     margin: { left: 40, right: 40 },
+    didParseCell: (data) => {
+      const colKey = p.columns[data.column.index]?.key;
+      if (data.section === 'head') {
+        data.cell.styles.halign = 'center'; // force-override any auto left/right alignment per column
+        if (colKey && HEADER_TINT[colKey]) data.cell.styles.fillColor = HEADER_TINT[colKey];
+        return;
+      }
+      const row = p.rows[data.row.index];
+      if (!row) return;
+      if (row._section) {
+        data.cell.styles.fillColor = [219, 234, 254]; // blue-100
+        data.cell.styles.textColor = [30, 58, 138];
+        data.cell.styles.fontStyle = 'bold';
+      } else if (row._total) {
+        data.cell.styles.fillColor = [255, 237, 213]; // amber-100
+        data.cell.styles.fontStyle = 'bold';
+        if (colKey === 'costCentre') data.cell.styles.halign = 'right'; // "Total X" label reads into the numbers
+      } else if (colKey === 'shift' && typeof row.shift === 'string' && SHIFT_COLOR[row.shift]) {
+        data.cell.styles.textColor = SHIFT_COLOR[row.shift];
+        data.cell.styles.fontStyle = 'bold';
+      } else if (colKey && CELL_COLOR[colKey]) {
+        data.cell.styles.textColor = CELL_COLOR[colKey];
+      }
+    },
     didDrawPage: (data) => {
       const page = doc.getNumberOfPages();
       doc.setFontSize(8);
@@ -89,11 +117,29 @@ export function exportToPdf(p: ExportPayload) {
 }
 
 export function printPayload(p: ExportPayload) {
-  const { head, body } = asMatrix(p);
+  const { head } = asMatrix(p);
   const win = window.open('', '_blank');
   if (!win) return;
-  const rowsHtml = body
-    .map((r) => `<tr>${r.map((c) => `<td>${String(c ?? '')}</td>`).join('')}</tr>`)
+  const HEADER_TINT: Record<string, string> = { planned: '#1e40af', actual: '#15803d', attendance: '#6d28d9' };
+  const SHIFT_COLOR: Record<string, string> = { Day: '#0369a1', Night: '#4f46e5' };
+  const CELL_COLOR: Record<string, string> = { planned: '#1e3a8a', actual: '#15803d', attendance: '#6d28d9' };
+  const rowsHtml = p.rows
+    .map((r) => {
+      const rowClass = r._section ? 'section' : r._total ? 'total' : '';
+      const cells = p.columns
+        .map((c) => {
+          const val = r[c.key] ?? '';
+          let style = '';
+          if (rowClass === 'total' && c.key === 'costCentre') style = 'text-align:right'; // "Total X" label reads into the numbers
+          else if (!rowClass) {
+            if (c.key === 'shift' && typeof val === 'string' && SHIFT_COLOR[val]) style = `color:${SHIFT_COLOR[val]};font-weight:600`;
+            else if (CELL_COLOR[c.key]) style = `color:${CELL_COLOR[c.key]}`;
+          }
+          return `<td style="${style}">${String(val)}</td>`;
+        })
+        .join('');
+      return `<tr class="${rowClass}">${cells}</tr>`;
+    })
     .join('');
   win.document.write(`
     <html><head><title>${p.title}</title>
@@ -101,13 +147,15 @@ export function printPayload(p: ExportPayload) {
       body{font-family:Inter,Arial,sans-serif;padding:24px;color:#111}
       h1{color:#1E3A8A;margin:0} .sub{color:#666;font-size:12px;margin:4px 0 16px}
       table{border-collapse:collapse;width:100%;font-size:12px}
-      th{background:#1E3A8A;color:#fff;padding:8px;text-align:left}
+      th{background:#1E3A8A;color:#fff;padding:8px;text-align:center}
       td{border:1px solid #ddd;padding:6px}
       tr:nth-child(even){background:#f3f6fc}
+      tr.section td{background:#dbeafe;color:#1e3a8a;font-weight:700}
+      tr.total td{background:#ffedd5;font-weight:700}
     </style></head><body>
     <h1>TAG - MPS — ${p.title}</h1>
     <div class="sub">${p.filterSummary ?? ''} | Generated ${new Date().toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).replace(',', '')}</div>
-    <table><thead><tr>${head.map((h) => `<th>${h}</th>`).join('')}</tr></thead><tbody>${rowsHtml}</tbody></table>
+    <table><thead><tr>${head.map((h, i) => `<th style="${HEADER_TINT[p.columns[i]?.key] ? `background:${HEADER_TINT[p.columns[i].key]}` : ''}">${h}</th>`).join('')}</tr></thead><tbody>${rowsHtml}</tbody></table>
     </body></html>`);
   win.document.close();
   win.focus();

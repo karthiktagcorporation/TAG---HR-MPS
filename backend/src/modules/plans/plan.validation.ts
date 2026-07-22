@@ -19,6 +19,7 @@ export const gridQuerySchema = z.object({
   year: z.coerce.number().int().min(2000).max(2100),
   month: z.coerce.number().int().min(1).max(12),
   unitId: z.string().optional(),
+  categoryId: z.string().optional(),
 });
 
 export const duplicateSchema = z.object({
@@ -46,5 +47,6 @@ export const planListQuery = z.object({
   month: z.coerce.number().optional(),
   unitId: z.string().optional(),
   costCenterId: z.string().optional(),
+  categoryId: z.string().optional(),
   status: z.enum(['DRAFT', 'PENDING', 'APPROVED', 'REJECTED']).optional(),
 });

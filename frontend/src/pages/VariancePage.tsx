@@ -8,7 +8,7 @@ import { PeriodFilters, PeriodValue } from '@/components/PeriodFilters';
 import { KpiCard } from '@/components/KpiCard';
 import { DataTable, Column } from '@/components/DataTable';
 import { ExportActions } from '@/components/ExportActions';
-import { Badge, Button, Card, Input } from '@/components/ui';
+import { Badge, Button, Card, Input, Select } from '@/components/ui';
 import { dashboardApi, reportApi } from '@/services/resources';
 import { MONTHS, formatDate } from '@/lib/utils';
 
@@ -17,17 +17,18 @@ export default function VariancePage() {
   const [period, setPeriod] = useState<PeriodValue>({ year: now.getFullYear(), month: now.getMonth() + 1 });
   // Optional single-date view: plan narrows to that day's plan, actuals for that day only
   const [date, setDate] = useState('');
+  const [shift, setShift] = useState<'' | 'DAY' | 'NIGHT'>('');
 
   const dashParams = useMemo(
-    () => ({ year: period.year, month: period.month, date: date || undefined, unitId: period.unitId, costCenterId: period.costCenterId }),
-    [period, date],
+    () => ({ year: period.year, month: period.month, date: date || undefined, unitId: period.unitId, costCenterId: period.costCenterId, categoryId: period.categoryId, shift: shift || undefined }),
+    [period, date, shift],
   );
   const reportParams = useMemo(
     () =>
       date
-        ? { year: period.year, month: period.month, dateFrom: date, dateTo: date, unitId: period.unitId, costCenterId: period.costCenterId }
-        : { year: period.year, month: period.month, unitId: period.unitId, costCenterId: period.costCenterId },
-    [period, date],
+        ? { year: period.year, month: period.month, dateFrom: date, dateTo: date, unitId: period.unitId, costCenterId: period.costCenterId, categoryId: period.categoryId, shift: shift || undefined }
+        : { year: period.year, month: period.month, unitId: period.unitId, costCenterId: period.costCenterId, categoryId: period.categoryId, shift: shift || undefined },
+    [period, date, shift],
   );
 
   const { data: dash } = useQuery({ queryKey: ['variance-kpi', dashParams], queryFn: () => dashboardApi.full(dashParams) });
@@ -54,7 +55,12 @@ export default function VariancePage() {
       />
 
       <FilterBar>
-        <PeriodFilters value={period} onChange={(v) => { setPeriod(v); }} show={{ unit: true, costCenter: true }} />
+        <PeriodFilters value={period} onChange={(v) => { setPeriod(v); }} show={{ unit: true, costCenter: true, category: true }} />
+        <Select value={shift} onChange={(e) => setShift(e.target.value as '' | 'DAY' | 'NIGHT')} className="w-36">
+          <option value="">All Shift</option>
+          <option value="DAY">Day Shift</option>
+          <option value="NIGHT">Night Shift</option>
+        </Select>
         <Input type="date" value={date} title="Single-date view (clear to see the full month)" onChange={(e) => setDate(e.target.value)} className="w-40" />
         {date && <Button variant="outline" size="sm" onClick={() => setDate('')}>Clear Date</Button>}
       </FilterBar>

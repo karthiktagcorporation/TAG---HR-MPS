@@ -42,14 +42,22 @@ export interface Unit {
   status: MasterStatus;
 }
 
+export interface Category {
+  id: string;
+  name: string;
+  status: MasterStatus;
+}
+
 export interface CostCenter {
   id: string;
   costCode: string;
   costCentre: string;
   unitId: string;
   department?: string | null;
+  categoryId?: string | null;
   status: MasterStatus;
   unit?: Unit;
+  category?: Category | null;
 }
 
 export interface ManpowerPlan {
@@ -77,6 +85,7 @@ export interface PlanGridRow {
   costCode: string;
   costCentre: string;
   department: string | null;
+  category: string | null;
   planId: string | null;
   plannedCount: number | null;
   dayPlan: number | null;
@@ -122,6 +131,7 @@ export interface ActualGridRow {
   costCode: string;
   costCentre: string;
   department: string | null;
+  category: string | null;
   planned: number;
   dayPlan: number;
   nightPlan: number;

@@ -11,7 +11,7 @@ import { LoadingState } from '@/components/States';
 import { apiErrorMessage } from '@/services/api';
 import { actualApi } from '@/services/resources';
 import { useAuth } from '@/context/AuthContext';
-import { useCostCenters, useUnits, useVendors } from '@/hooks/useMasters';
+import { useCostCenters, useUnits, useVendors, useCategories } from '@/hooks/useMasters';
 import { formatDate } from '@/lib/utils';
 import type { ActualGridRow, VendorAllocation } from '@/types';
 
@@ -34,11 +34,13 @@ export default function ActualsPage() {
   const [date, setDate] = useState(dayjs().format('YYYY-MM-DD'));
   const [unitId, setUnitId] = useState('');
   const [costCenterId, setCostCenterId] = useState('');
+  const [categoryId, setCategoryId] = useState('');
   const [edits, setEdits] = useState<Record<string, Edit>>({});
   const [vendorEditor, setVendorEditor] = useState<{ row: ActualGridRow; shift: 'DAY' | 'NIGHT' } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const { data: units = [] } = useUnits();
   const { data: costCenters = [] } = useCostCenters(unitId || undefined);
+  const { data: categories = [] } = useCategories();
   const { data: vendors = [] } = useVendors();
 
   const canEnter = hasRole('SUPER_ADMIN', 'HR_ADMIN', 'USER_MASTER');
@@ -64,14 +66,14 @@ export default function ActualsPage() {
   const showNight = shiftFilter !== 'DAY';
 
   const { data: allRows = [], isLoading } = useQuery({
-    queryKey: ['actual-grid', date, unitId],
-    queryFn: () => actualApi.grid(date, unitId || undefined),
+    queryKey: ['actual-grid', date, unitId, categoryId],
+    queryFn: () => actualApi.grid(date, unitId || undefined, categoryId || undefined),
     enabled: !allDates,
   });
 
   const { data: allList, isLoading: listLoading } = useQuery({
-    queryKey: ['actual-list-all', unitId, costCenterId],
-    queryFn: () => actualApi.list({ page: 1, pageSize: 1000, sortBy: 'unit', sortDir: 'asc', unitId: unitId || undefined, costCenterId: costCenterId || undefined }),
+    queryKey: ['actual-list-all', unitId, costCenterId, categoryId],
+    queryFn: () => actualApi.list({ page: 1, pageSize: 1000, sortBy: 'unit', sortDir: 'asc', unitId: unitId || undefined, costCenterId: costCenterId || undefined, categoryId: categoryId || undefined }),
     enabled: allDates,
   });
   const rows = useMemo(
@@ -312,6 +314,10 @@ export default function ActualsPage() {
           <option value="">All Cost Centers</option>
           {costCenters.map((c) => <option key={c.id} value={c.id}>{c.costCode} — {c.costCentre}{c.department ? ` - ${c.department}` : ''}</option>)}
         </Select>
+        <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="w-44">
+          <option value="">All Categories</option>
+          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </Select>
         {!allDates && (
           <Select value={shiftFilter} onChange={(e) => setShiftFilter(e.target.value as 'ALL' | 'DAY' | 'NIGHT')} className="w-36">
             <option value="ALL">All Shift</option>
@@ -342,6 +348,7 @@ export default function ActualsPage() {
                     <th className="px-3 py-3">Date</th>
                     <th className="px-3 py-3">Cost Centre</th>
                     <th className="px-3 py-3">Department</th>
+                    <th className="px-3 py-3">Category</th>
                     <th className="px-3 py-3 text-right">Day</th>
                     <th className="px-3 py-3 text-right">Night</th>
                     <th className="px-3 py-3 text-right">Male</th>
@@ -363,6 +370,7 @@ export default function ActualsPage() {
                         <span className="block text-xs text-muted-foreground">{a.costCenter?.costCentre}</span>
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">{a.costCenter?.department ?? '—'}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{a.costCenter?.category?.name ?? '—'}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{a.dayActual}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{a.nightActual}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{a.maleActual}</td>
@@ -408,6 +416,7 @@ export default function ActualsPage() {
                   <th className="px-3 py-3">Unit</th>
                   <th className="px-3 py-3">Cost Centre</th>
                   <th className="px-3 py-3">Department</th>
+                  <th className="px-3 py-3">Category</th>
                   {showDay && <th className="px-3 py-3 text-right">Day Plan</th>}
                   {showNight && <th className="px-3 py-3 text-right">Night Plan</th>}
                   {showDay && <th className="px-3 py-3 text-right">Day Actual</th>}
@@ -435,6 +444,7 @@ export default function ActualsPage() {
                         <span className="block text-xs text-muted-foreground">{r.costCentre}</span>
                       </td>
                       <td className="px-3 py-2 text-muted-foreground">{r.department ?? '—'}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{r.category ?? '—'}</td>
                       {showDay && <td className="px-3 py-2 text-right">{r.dayPlan}</td>}
                       {showNight && <td className="px-3 py-2 text-right">{r.nightPlan}</td>}
                       {showDay && <td className="px-3 py-2">{shiftCell(r, 'DAY')}</td>}

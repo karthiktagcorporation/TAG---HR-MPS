@@ -9,7 +9,7 @@ import { DataTable, Column } from '@/components/DataTable';
 import { ExportActions } from '@/components/ExportActions';
 import { Badge, Card, Input, Select } from '@/components/ui';
 import { reportApi } from '@/services/resources';
-import { useUnits, useCostCenters } from '@/hooks/useMasters';
+import { useUnits, useCostCenters, useCategories } from '@/hooks/useMasters';
 import { MONTHS, formatDate } from '@/lib/utils';
 
 export default function MissingEntriesPage() {
@@ -18,10 +18,12 @@ export default function MissingEntriesPage() {
   const [dateTo, setDateTo] = useState(today);
   const [unitId, setUnitId] = useState('');
   const [costCenterId, setCostCenterId] = useState('');
+  const [categoryId, setCategoryId] = useState('');
   const [shift, setShift] = useState<'' | 'DAY' | 'NIGHT'>('');
   const [search, setSearch] = useState('');
   const { data: units = [] } = useUnits();
   const { data: costCenters = [] } = useCostCenters(unitId || undefined);
+  const { data: categories = [] } = useCategories();
 
   // Month quick-pick: sets the from/to range to that whole month (capped at today)
   const [month, setMonth] = useState('');
@@ -41,8 +43,8 @@ export default function MissingEntriesPage() {
   }));
 
   const params = useMemo(
-    () => ({ dateFrom, dateTo, unitId: unitId || undefined, costCenterId: costCenterId || undefined, shift: shift || undefined, search: search || undefined }),
-    [dateFrom, dateTo, unitId, costCenterId, shift, search],
+    () => ({ dateFrom, dateTo, unitId: unitId || undefined, costCenterId: costCenterId || undefined, categoryId: categoryId || undefined, shift: shift || undefined, search: search || undefined }),
+    [dateFrom, dateTo, unitId, costCenterId, categoryId, shift, search],
   );
 
   const { data, isLoading } = useQuery({
@@ -93,6 +95,10 @@ export default function MissingEntriesPage() {
         <Select value={costCenterId} onChange={(e) => setCostCenterId(e.target.value)} className="w-56">
           <option value="">All Cost Centers</option>
           {costCenters.map((c) => <option key={c.id} value={c.id}>{c.costCode} — {c.costCentre}{c.department ? ` - ${c.department}` : ''}</option>)}
+        </Select>
+        <Select value={categoryId} onChange={(e) => setCategoryId(e.target.value)} className="w-44">
+          <option value="">All Categories</option>
+          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </Select>
         <Select value={shift} onChange={(e) => setShift(e.target.value as '' | 'DAY' | 'NIGHT')} className="w-36">
           <option value="">All Shift</option>

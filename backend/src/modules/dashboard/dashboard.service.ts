@@ -13,6 +13,7 @@ export interface DashboardFilters {
   dateTo?: Date;
   unitId?: string;
   costCenterId?: string;
+  categoryId?: string;
   scopedCostCenterIds?: string[] | null;
   /** All (default) = combined day+night; DAY/NIGHT = that shift only */
   shift?: 'DAY' | 'NIGHT';
@@ -84,6 +85,7 @@ function actualWhere(f: DashboardFilters): Prisma.ManpowerActualWhereInput {
     ...(f.scopedCostCenterIds ? { costCenterId: { in: f.scopedCostCenterIds } } : {}),
     ...(f.unitId ? { unitId: f.unitId } : {}),
     ...(f.costCenterId ? { costCenterId: f.costCenterId } : {}),
+    ...(f.categoryId ? { costCenter: { categoryId: f.categoryId } } : {}),
   };
 }
 
@@ -205,7 +207,7 @@ export const dashboardService = {
     const names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const out: { label: string; planned: number }[] = [];
     for (let m = 1; m <= 12; m++) {
-      const totals = await monthlyPlanTotals(f.year, m, { scopedCostCenterIds: f.scopedCostCenterIds, unitId: f.unitId, costCenterId: f.costCenterId });
+      const totals = await monthlyPlanTotals(f.year, m, { scopedCostCenterIds: f.scopedCostCenterIds, unitId: f.unitId, costCenterId: f.costCenterId, categoryId: f.categoryId });
       let planned = 0;
       for (const v of totals.values()) planned += v.monthly[field];
       out.push({ label: names[m - 1], planned });

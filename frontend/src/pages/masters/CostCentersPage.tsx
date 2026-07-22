@@ -1,10 +1,11 @@
 import { CrudPage, StatusBadge } from '@/components/CrudPage';
 import { costCenterApi } from '@/services/resources';
-import { useUnits } from '@/hooks/useMasters';
+import { useUnits, useCategories } from '@/hooks/useMasters';
 import type { CostCenter } from '@/types';
 
 export default function CostCentersPage() {
   const { data: units = [] } = useUnits();
+  const { data: categories = [] } = useCategories();
 
   return (
     <CrudPage<CostCenter>
@@ -19,6 +20,7 @@ export default function CostCentersPage() {
         { key: 'costCode', header: 'Cost Code' },
         { key: 'costCentre', header: 'Cost Centre' },
         { key: 'department', header: 'Department', render: (r) => r.department || '—' },
+        { key: 'category', header: 'Category', render: (r) => r.category?.name ?? '—' },
         { key: 'status', header: 'Status', render: (r) => <StatusBadge status={r.status} /> },
       ]}
       fields={[
@@ -26,13 +28,15 @@ export default function CostCentersPage() {
         { name: 'costCentre', label: 'Cost Centre', required: true },
         { name: 'unitId', label: 'Unit', type: 'select', required: true, options: units.map((u) => ({ value: u.id, label: `${u.code} — ${u.name}` })) },
         { name: 'department', label: 'Department (optional)', placeholder: 'e.g. Production' },
+        { name: 'categoryId', label: 'Category (optional)', type: 'select', options: categories.map((c) => ({ value: c.id, label: c.name })) },
         { name: 'status', label: 'Status', type: 'status' },
       ]}
       selectFilters={[
         { param: 'unitId', placeholder: 'All Units', options: units.map((u) => ({ value: u.id, label: `${u.code} — ${u.name}` })) },
+        { param: 'categoryId', placeholder: 'All Categories', options: categories.map((c) => ({ value: c.id, label: c.name })) },
       ]}
       toFormValues={(r) => ({
-        costCode: r.costCode, costCentre: r.costCentre, unitId: r.unitId, department: r.department ?? '', status: r.status,
+        costCode: r.costCode, costCentre: r.costCentre, unitId: r.unitId, department: r.department ?? '', categoryId: r.categoryId ?? '', status: r.status,
       })}
     />
   );

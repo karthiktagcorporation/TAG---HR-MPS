@@ -24,6 +24,7 @@ export const bulkActualSchema = z.object({ rows: z.array(actualRowSchema).min(1)
 export const actualGridQuery = z.object({
   date: z.coerce.date(),
   unitId: z.string().optional(),
+  categoryId: z.string().optional(),
 });
 
 export const actualListQuery = z.object({
@@ -35,4 +36,5 @@ export const actualListQuery = z.object({
   dateTo: z.coerce.date().optional(),
   unitId: z.string().optional(),
   costCenterId: z.string().optional(),
+  categoryId: z.string().optional(),
 });

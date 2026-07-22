@@ -5,6 +5,7 @@ import LoginPage from '@/pages/LoginPage';
 import DashboardPage from '@/pages/DashboardPage';
 import VendorsPage from '@/pages/masters/VendorsPage';
 import UnitsPage from '@/pages/masters/UnitsPage';
+import CategoriesPage from '@/pages/masters/CategoriesPage';
 import CostCentersPage from '@/pages/masters/CostCentersPage';
 import CalendarPage from '@/pages/masters/CalendarPage';
 import PlansPage from '@/pages/PlansPage';
@@ -37,6 +38,7 @@ const router = createBrowserRouter([
       { path: 'reports', element: <ReportsPage /> },
       { path: 'masters/vendors', element: <RoleRoute roles={['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT']}><VendorsPage /></RoleRoute> },
       { path: 'masters/units', element: <RoleRoute roles={['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT']}><UnitsPage /></RoleRoute> },
+      { path: 'masters/categories', element: <RoleRoute roles={['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT']}><CategoriesPage /></RoleRoute> },
       { path: 'masters/cost-centers', element: <RoleRoute roles={['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT']}><CostCentersPage /></RoleRoute> },
       { path: 'masters/calendar', element: <RoleRoute roles={['SUPER_ADMIN', 'HR_ADMIN', 'MANAGEMENT']}><CalendarPage /></RoleRoute> },
       { path: 'admin/users', element: <RoleRoute roles={['SUPER_ADMIN']}><UsersPage /></RoleRoute> },

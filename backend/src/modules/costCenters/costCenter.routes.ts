@@ -31,17 +31,18 @@ const createSchema = z.object({
   costCentre: z.string().min(1).max(150),
   unitId: z.string().min(1),
   department: z.string().max(120).optional().nullable(),
+  categoryId: z.string().optional().nullable(),
   status: masterStatus.optional(),
 });
 const updateSchema = createSchema.partial();
 
-const include = { unit: true };
+const include = { unit: true, category: true };
 
 router.use(authenticate);
 
 router.get(
   '/',
-  validate({ query: listQuerySchema.extend({ unitId: z.string().optional() }) }),
+  validate({ query: listQuerySchema.extend({ unitId: z.string().optional(), categoryId: z.string().optional() }) }),
   asyncHandler(async (req, res) => {
     const q = parseListQuery(req.query, 'costCode');
     const scoped = allowedCostCenterIds(req); // null = unrestricted
@@ -50,6 +51,7 @@ router.get(
       ...(scoped ? { id: { in: scoped } } : {}),
       ...(req.query.status ? { status: req.query.status as 'ACTIVE' | 'INACTIVE' } : {}),
       ...(req.query.unitId ? { unitId: String(req.query.unitId) } : {}),
+      ...(req.query.categoryId ? { categoryId: String(req.query.categoryId) } : {}),
       ...(q.search
         ? { OR: [{ costCode: { contains: q.search, mode: 'insensitive' as const } }, { costCentre: { contains: q.search, mode: 'insensitive' as const } }] }
         : {}),

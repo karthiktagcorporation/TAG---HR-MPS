@@ -52,10 +52,10 @@ router.get(
   authorize('SUPER_ADMIN', 'HR_ADMIN', 'USER_MASTER'),
   validate({ query: actualGridQuery }),
   asyncHandler(async (req, res) => {
-    const { date, unitId } = req.query as any;
+    const { date, unitId, categoryId } = req.query as any;
     const d = new Date(date);
     const utc = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-    return success(res, await actualService.grid(utc, allowedCostCenterIds(req), unitId));
+    return success(res, await actualService.grid(utc, allowedCostCenterIds(req), unitId, categoryId));
   }),
 );
 

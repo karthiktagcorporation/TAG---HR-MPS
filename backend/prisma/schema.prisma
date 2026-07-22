@@ -181,18 +181,34 @@ model Unit {
   @@map("units")
 }
 
+model Category {
+  id        String       @id @default(cuid())
+  name      String       @unique
+  status    MasterStatus @default(ACTIVE)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  deletedAt DateTime?
+
+  costCenters CostCenter[]
+
+  @@index([status])
+  @@map("categories")
+}
+
 model CostCenter {
   id         String       @id @default(cuid())
   costCode   String
   costCentre String
   unitId     String
   department String? // optional functional grouping label
+  categoryId String? // optional workforce category (Security, Housekeeping, ...)
   status     MasterStatus @default(ACTIVE)
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
   deletedAt  DateTime?
 
-  unit Unit @relation(fields: [unitId], references: [id])
+  unit     Unit      @relation(fields: [unitId], references: [id])
+  category Category? @relation(fields: [categoryId], references: [id])
 
   userScopes UserCostCenter[]
   plans      ManpowerPlan[]
@@ -203,6 +219,7 @@ model CostCenter {
   // (e.g. U1-HRADM-SECURITY-ASO vs U1-HRADM-HK)
   @@unique([unitId, costCode, department])
   @@index([unitId])
+  @@index([categoryId])
   @@index([status])
   @@map("cost_centers")
 }

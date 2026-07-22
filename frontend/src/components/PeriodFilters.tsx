@@ -1,23 +1,25 @@
 import { Select } from './ui';
 import { MONTHS } from '@/lib/utils';
-import { useUnits, useCostCenters } from '@/hooks/useMasters';
+import { useUnits, useCostCenters, useCategories } from '@/hooks/useMasters';
 
 export interface PeriodValue {
   year: number;
   month: number;
   unitId?: string;
   costCenterId?: string;
+  categoryId?: string;
 }
 
 interface Props {
   value: PeriodValue;
   onChange: (v: PeriodValue) => void;
-  show?: { unit?: boolean; costCenter?: boolean };
+  show?: { unit?: boolean; costCenter?: boolean; category?: boolean };
 }
 
 export function PeriodFilters({ value, onChange, show = { unit: true } }: Props) {
   const { data: units = [] } = useUnits();
   const { data: costCenters = [] } = useCostCenters(value.unitId);
+  const { data: categories = [] } = useCategories();
   // Business started using TAG-MPS in 2026 — no earlier years needed
   const START_YEAR = 2026;
   const endYear = Math.max(new Date().getFullYear() + 2, START_YEAR + 2);
@@ -48,6 +50,14 @@ export function PeriodFilters({ value, onChange, show = { unit: true } }: Props)
           <option value="">All Cost Centers</option>
           {costCenters.map((c) => (
             <option key={c.id} value={c.id}>{c.costCode} — {c.costCentre}{c.department ? ` - ${c.department}` : ''}</option>
+          ))}
+        </Select>
+      )}
+      {show.category && (
+        <Select value={value.categoryId ?? ''} onChange={(e) => onChange({ ...value, categoryId: e.target.value || undefined })} className="w-44">
+          <option value="">All Categories</option>
+          {categories.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
           ))}
         </Select>
       )}

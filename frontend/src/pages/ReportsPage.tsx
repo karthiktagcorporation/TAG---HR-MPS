@@ -23,13 +23,13 @@ export default function ReportsPage() {
 
   const { data: defs = [] } = useQuery({ queryKey: ['report-defs'], queryFn: () => reportApi.definitions() });
 
-  const isDaily = type === 'daily-summary' || type === 'vendor-daily' || type === 'missing-entries';
+  const isDaily = ['daily-summary', 'daily-summary-day', 'daily-summary-night', 'vendor-daily', 'missing-entries', 'category-daily'].includes(type);
 
   const params = useMemo(
     () =>
       isDaily
-        ? { dateFrom: date, dateTo: date, unitId: period.unitId, costCenterId: period.costCenterId, search: search || undefined }
-        : { year: period.year, month: period.month, unitId: period.unitId, costCenterId: period.costCenterId, search: search || undefined },
+        ? { dateFrom: date, dateTo: date, unitId: period.unitId, costCenterId: period.costCenterId, categoryId: period.categoryId, search: search || undefined }
+        : { year: period.year, month: period.month, unitId: period.unitId, costCenterId: period.costCenterId, categoryId: period.categoryId, search: search || undefined },
     [isDaily, date, period, search],
   );
 
@@ -88,7 +88,7 @@ export default function ReportsPage() {
         {isDaily ? (
           <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-44" />
         ) : (
-          <PeriodFilters value={period} onChange={setPeriod} show={{ unit: true, costCenter: true }} />
+          <PeriodFilters value={period} onChange={setPeriod} show={{ unit: true, costCenter: true, category: true }} />
         )}
       </FilterBar>
 
@@ -101,7 +101,14 @@ export default function ReportsPage() {
         {isError ? (
           <ErrorState message={apiErrorMessage(error)} onRetry={() => refetch()} />
         ) : (
-          <DataTable columns={columns} data={data?.rows ?? []} loading={isLoading} rowKey={(_, i) => String(i)} emptyTitle="No data for the selected filters" />
+          <DataTable
+            columns={columns}
+            data={data?.rows ?? []}
+            loading={isLoading}
+            rowKey={(_, i) => String(i)}
+            emptyTitle="No data for the selected filters"
+            rowClassName={(r) => (r._total ? 'bg-muted/60 font-semibold' : r._section ? 'bg-brand-50 dark:bg-brand-900/20 font-semibold' : undefined)}
+          />
         )}
       </Card>
     </div>

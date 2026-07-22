@@ -38,7 +38,7 @@ export default function PlansPage() {
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: ['plan-grid', period],
-    queryFn: () => planApi.grid(period.year, period.month, period.unitId),
+    queryFn: () => planApi.grid(period.year, period.month, period.unitId, period.categoryId),
   });
 
   const invalidate = () => {
@@ -187,7 +187,7 @@ export default function PlansPage() {
       />
 
       <FilterBar>
-        <PeriodFilters value={period} onChange={(v) => { setPeriod(v); setEdits({}); setEffectiveFrom(''); }} show={{ unit: true }} />
+        <PeriodFilters value={period} onChange={(v) => { setPeriod(v); setEdits({}); setEffectiveFrom(''); }} show={{ unit: true, category: true }} />
         {canEdit && (
           <div className="flex items-center gap-1.5 text-sm">
             <span className="text-muted-foreground">Effective from</span>
@@ -224,6 +224,7 @@ export default function PlansPage() {
                   <th className="px-3 py-3">Cost Code</th>
                   <th className="px-3 py-3">Cost Centre</th>
                   <th className="px-3 py-3">Department</th>
+                  <th className="px-3 py-3">Category</th>
                   <th className="px-3 py-3 text-right">Day Plan</th>
                   <th className="px-3 py-3 text-right">Night Plan</th>
                   <th className="px-3 py-3 text-right">Total</th>
@@ -241,6 +242,7 @@ export default function PlansPage() {
                       <td className="px-3 py-2">{r.costCode}</td>
                       <td className="px-3 py-2">{r.costCentre}</td>
                       <td className="px-3 py-2 text-muted-foreground">{r.department ?? '—'}</td>
+                      <td className="px-3 py-2 text-muted-foreground">{r.category ?? '—'}</td>
                       <td className="px-3 py-2 text-right">{canEdit ? numCell(r, 'dayPlan') : <span>{r.dayPlan ?? '—'}</span>}</td>
                       <td className="px-3 py-2 text-right">{canEdit ? numCell(r, 'nightPlan') : <span>{r.nightPlan ?? '—'}</span>}</td>
                       <td className="px-3 py-2 text-right font-semibold">{e.dayPlan + e.nightPlan}</td>

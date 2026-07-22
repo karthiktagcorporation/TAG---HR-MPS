@@ -18,6 +18,7 @@ const filterSchema = z.object({
   dateTo: z.coerce.date().optional(),
   unitId: z.string().optional(),
   costCenterId: z.string().optional(),
+  categoryId: z.string().optional(),
   shift: z.enum(['DAY', 'NIGHT']).optional(),
 });
 
@@ -31,6 +32,7 @@ function buildFilters(req: any): DashboardFilters {
     dateTo: req.query.dateTo ? new Date(req.query.dateTo) : undefined,
     unitId: req.query.unitId || undefined,
     costCenterId: req.query.costCenterId || undefined,
+    categoryId: req.query.categoryId || undefined,
     shift: req.query.shift || undefined,
     scopedCostCenterIds: allowedCostCenterIds(req),
   };

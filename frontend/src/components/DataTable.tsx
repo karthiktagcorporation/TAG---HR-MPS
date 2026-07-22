@@ -22,6 +22,7 @@ interface DataTableProps<T> {
   emptyTitle?: string;
   emptyDescription?: string;
   rowKey?: (row: T, index: number) => string;
+  rowClassName?: (row: T) => string | undefined;
 }
 
 export function DataTable<T extends Record<string, any>>({
@@ -33,6 +34,7 @@ export function DataTable<T extends Record<string, any>>({
   emptyTitle,
   emptyDescription,
   rowKey,
+  rowClassName,
 }: DataTableProps<T>) {
   if (loading) return <LoadingState />;
   if (!data.length) return <EmptyState title={emptyTitle} description={emptyDescription} />;
@@ -57,7 +59,7 @@ export function DataTable<T extends Record<string, any>>({
           </thead>
           <tbody>
             {data.map((row, i) => (
-              <tr key={rowKey ? rowKey(row, i) : row.id ?? i} className="border-b border-border transition-colors hover:bg-muted/40">
+              <tr key={rowKey ? rowKey(row, i) : row.id ?? i} className={cn('border-b border-border transition-colors hover:bg-muted/40', rowClassName?.(row))}>
                 {columns.map((c) => (
                   <td key={c.key} className={cn('whitespace-nowrap px-4 py-3', alignClass(c.align), c.className)}>
                     {c.render ? c.render(row) : (row[c.key] ?? '—')}

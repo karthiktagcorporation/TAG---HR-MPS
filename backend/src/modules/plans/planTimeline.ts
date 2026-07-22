@@ -20,6 +20,7 @@ interface Rev extends PlanQty {
 interface PlanFilters {
   unitId?: string;
   costCenterId?: string;
+  categoryId?: string;
   scopedCostCenterIds?: string[] | null;
 }
 
@@ -36,6 +37,7 @@ export async function approvedRevisionsByCostCenter(year: number, month: number,
       ...(f.scopedCostCenterIds ? { costCenterId: { in: f.scopedCostCenterIds } } : {}),
       ...(f.unitId ? { unitId: f.unitId } : {}),
       ...(f.costCenterId ? { costCenterId: f.costCenterId } : {}),
+      ...(f.categoryId ? { costCenter: { categoryId: f.categoryId } } : {}),
     },
     select: {
       costCenterId: true,

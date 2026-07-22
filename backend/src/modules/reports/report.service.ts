@@ -9,6 +9,8 @@ export type ReportType =
   | 'unit'
   | 'daily-attendance'
   | 'daily-summary'
+  | 'daily-summary-day'
+  | 'daily-summary-night'
   | 'monthly-summary'
   | 'plan-vs-actual'
   | 'shortage'
@@ -17,7 +19,9 @@ export type ReportType =
   | 'vendor-daily'
   | 'vendor-monthly'
   | 'vendor-consolidated'
-  | 'missing-entries';
+  | 'missing-entries'
+  | 'category-daily'
+  | 'category-monthly';
 
 /** Attendance % of actual vs plan, one decimal; '—' when there is no plan. */
 function attendancePct(actual: number, planned: number) {
@@ -31,6 +35,7 @@ export interface ReportFilters {
   dateTo?: Date;
   unitId?: string;
   costCenterId?: string;
+  categoryId?: string;
   search?: string;
   scopedCostCenterIds?: string[] | null;
   shift?: 'DAY' | 'NIGHT';
@@ -62,6 +67,7 @@ function actualWhere(f: ReportFilters): Prisma.ManpowerActualWhereInput {
     ...(f.scopedCostCenterIds ? { costCenterId: { in: f.scopedCostCenterIds } } : {}),
     ...(f.unitId ? { unitId: f.unitId } : {}),
     ...(f.costCenterId ? { costCenterId: f.costCenterId } : {}),
+    ...(f.categoryId ? { costCenter: { categoryId: f.categoryId } } : {}),
   };
 }
 
@@ -74,6 +80,7 @@ function planWhere(f: ReportFilters): Prisma.ManpowerPlanWhereInput {
     ...(f.scopedCostCenterIds ? { costCenterId: { in: f.scopedCostCenterIds } } : {}),
     ...(f.unitId ? { unitId: f.unitId } : {}),
     ...(f.costCenterId ? { costCenterId: f.costCenterId } : {}),
+    ...(f.categoryId ? { costCenter: { categoryId: f.categoryId } } : {}),
   };
 }
 
@@ -97,6 +104,8 @@ const REPORT_TITLES: Record<ReportType, string> = {
   unit: 'Unit Report',
   'daily-attendance': 'Daily Attendance Report',
   'daily-summary': 'Daily Summary',
+  'daily-summary-day': 'Daily Summary — Day Shift',
+  'daily-summary-night': 'Daily Summary — Night Shift',
   'monthly-summary': 'Monthly Summary',
   'plan-vs-actual': 'Plan vs Actual (by Cost Center)',
   shortage: 'Shortage Report',
@@ -106,6 +115,8 @@ const REPORT_TITLES: Record<ReportType, string> = {
   'vendor-monthly': 'Vendor Summary (Monthly)',
   'vendor-consolidated': 'Vendor Summary (Consolidated)',
   'missing-entries': 'Missing Daily Actual Entries',
+  'category-daily': 'Category-wise Summary (Daily)',
+  'category-monthly': 'Category-wise Summary (Monthly)',
 };
 
 export const reportService = {
@@ -124,6 +135,10 @@ export const reportService = {
         return { type, title, ...(await this.dailyAttendance(f)) };
       case 'daily-summary':
         return { type, title, ...(await this.shiftSummary(f, 'daily')) };
+      case 'daily-summary-day':
+        return { type, title, ...(await this.shiftLockedDailySummary(f, 'DAY')) };
+      case 'daily-summary-night':
+        return { type, title, ...(await this.shiftLockedDailySummary(f, 'NIGHT')) };
       case 'monthly-summary':
         return { type, title, ...(await this.shiftSummary(f, 'monthly')) };
       case 'plan-vs-actual':
@@ -142,39 +157,48 @@ export const reportService = {
         return { type, title, ...(await this.vendorSummary(f, 'consolidated')) };
       case 'missing-entries':
         return { type, title, ...(await this.missingEntries(f)) };
+      case 'category-daily':
+        return { type, title, ...(await this.categorySummary(f, 'daily')) };
+      case 'category-monthly':
+        return { type, title, ...(await this.categorySummary(f, 'monthly')) };
       default:
         throw new BadRequestError(`Unknown report type: ${type}`);
     }
   },
 
   async byCostCenter(f: ReportFilters) {
+    const planField = f.shift === 'DAY' ? 'dayPlan' : f.shift === 'NIGHT' ? 'nightPlan' : 'plannedCount';
+    const actualField = f.shift === 'DAY' ? 'dayActual' : f.shift === 'NIGHT' ? 'nightActual' : 'actualCount';
     const [grouped, planTotals] = await Promise.all([
       prisma.manpowerActual.groupBy({
         by: ['costCenterId'],
         where: actualWhere(f),
-        _sum: { actualCount: true, shortage: true, excess: true },
+        _sum: { actualCount: true, dayActual: true, nightActual: true, shortage: true, excess: true },
       }),
       planTotalsForFilters(f),
     ]);
     // Include cost centers that have a plan but no entries at all — they show
     // actual 0 with the full plan as shortage instead of disappearing.
     const groupedIds = new Set(grouped.map((g) => g.costCenterId));
-    const planOnlyIds = [...planTotals.entries()].filter(([id, v]) => !groupedIds.has(id) && v.monthly.plannedCount > 0).map(([id]) => id);
+    const planOnlyIds = [...planTotals.entries()].filter(([id, v]) => !groupedIds.has(id) && v.monthly[planField] > 0).map(([id]) => id);
     const allIds = [...groupedIds, ...planOnlyIds];
-    const ccs = await prisma.costCenter.findMany({ where: { id: { in: allIds } }, include: { unit: true } });
+    const ccs = await prisma.costCenter.findMany({ where: { id: { in: allIds } }, include: { unit: true, category: true } });
     const map = new Map(ccs.map((c) => [c.id, c]));
     const rows = [
       ...grouped.map((g) => {
         const cc = map.get(g.costCenterId);
-        const actual = g._sum.actualCount ?? 0;
-        const shortage = g._sum.shortage ?? 0;
-        const excess = g._sum.excess ?? 0;
-        const planned = planTotals.get(g.costCenterId)?.monthly.plannedCount ?? 0;
+        const actual = g._sum[actualField] ?? 0;
+        const planned = planTotals.get(g.costCenterId)?.monthly[planField] ?? 0;
+        // shift-filtered variance isn't pre-stored per shift — derive from the totals;
+        // combined ('All') uses the exact per-row stored shortage/excess
+        const shortage = f.shift ? Math.max(planned - actual, 0) : g._sum.shortage ?? 0;
+        const excess = f.shift ? Math.max(actual - planned, 0) : g._sum.excess ?? 0;
         return {
           unit: cc?.unit.code ?? '',
           costCode: cc?.costCode ?? '',
           costCentre: cc?.costCentre ?? '',
           department: cc?.department ?? '',
+          category: cc?.category?.name ?? '',
           planned,
           actual,
           shortage,
@@ -183,12 +207,13 @@ export const reportService = {
       }),
       ...planOnlyIds.map((id) => {
         const cc = map.get(id);
-        const planned = planTotals.get(id)!.monthly.plannedCount;
+        const planned = planTotals.get(id)!.monthly[planField];
         return {
           unit: cc?.unit.code ?? '',
           costCode: cc?.costCode ?? '',
           costCentre: cc?.costCentre ?? '',
           department: cc?.department ?? '',
+          category: cc?.category?.name ?? '',
           planned,
           actual: 0,
           shortage: planned,
@@ -202,6 +227,7 @@ export const reportService = {
         { key: 'costCode', label: 'Cost Code' },
         { key: 'costCentre', label: 'Cost Centre' },
         { key: 'department', label: 'Department' },
+        { key: 'category', label: 'Category' },
         { key: 'planned', label: 'Monthly Plan' },
         { key: 'actual', label: 'Total Actual' },
         { key: 'shortage', label: 'Shortage' },
@@ -251,7 +277,7 @@ export const reportService = {
     const [records, plans] = await Promise.all([
       prisma.manpowerActual.findMany({
         where: actualWhere(f),
-        include: { unit: true, costCenter: true },
+        include: { unit: true, costCenter: { include: { category: true } } },
         orderBy: [{ date: 'desc' }, { unitId: 'asc' }],
         take: 5000,
       }),
@@ -267,6 +293,7 @@ export const reportService = {
         costCode: r.costCenter.costCode,
         costCentre: r.costCenter.costCentre,
         department: r.costCenter.department ?? '',
+        category: r.costCenter.category?.name ?? '',
         dailyPlan,
         actual: r.actualCount,
         attendance: attendancePct(r.actualCount, dailyPlan),
@@ -282,6 +309,7 @@ export const reportService = {
         { key: 'costCode', label: 'Cost Code' },
         { key: 'costCentre', label: 'Cost Centre' },
         { key: 'department', label: 'Department' },
+        { key: 'category', label: 'Category' },
         { key: 'dailyPlan', label: 'Daily Plan' },
         { key: 'actual', label: 'Daily Actual' },
         { key: 'attendance', label: 'Attendance %' },
@@ -318,7 +346,7 @@ export const reportService = {
       planQty = new Map([...totals.entries()].map(([cc, v]) => [cc, v.monthly]));
     }
     const [plans, actuals] = await Promise.all([
-      prisma.manpowerPlan.findMany({ where: pWhere, include: { costCenter: { include: { unit: true } } } }),
+      prisma.manpowerPlan.findMany({ where: pWhere, include: { costCenter: { include: { unit: true, category: true } } } }),
       prisma.manpowerActual.groupBy({
         by: ['costCenterId'],
         where: aWhere,
@@ -330,11 +358,11 @@ export const reportService = {
     const planCcIds = new Set(plans.map((p) => p.costCenterId));
     const orphanIds = actuals.map((a) => a.costCenterId).filter((id) => !planCcIds.has(id));
     const orphanCcs = orphanIds.length
-      ? await prisma.costCenter.findMany({ where: { id: { in: orphanIds } }, include: { unit: true } })
+      ? await prisma.costCenter.findMany({ where: { id: { in: orphanIds } }, include: { unit: true, category: true } })
       : [];
 
     type Row = {
-      unit: string; costCode: string; costCentre: string; department: string;
+      unit: string; costCode: string; costCentre: string; department: string; category: string;
       dayPlan: number; nightPlan: number; planned: number;
       dayActual: number; nightActual: number; actual: number;
       male: number; female: number; shortage: number; excess: number;
@@ -347,6 +375,7 @@ export const reportService = {
         costCode: p.costCenter.costCode,
         costCentre: p.costCenter.costCentre,
         department: p.costCenter.department ?? '',
+        category: p.costCenter.category?.name ?? '',
         dayPlan: planQty.get(p.costCenterId)?.dayPlan ?? 0,
         nightPlan: planQty.get(p.costCenterId)?.nightPlan ?? 0,
         planned: planQty.get(p.costCenterId)?.plannedCount ?? 0,
@@ -362,7 +391,7 @@ export const reportService = {
     for (const cc of orphanCcs) {
       const a = actualMap.get(cc.id)!;
       rows.push({
-        unit: cc.unit.code, costCode: cc.costCode, costCentre: cc.costCentre, department: cc.department ?? '',
+        unit: cc.unit.code, costCode: cc.costCode, costCentre: cc.costCentre, department: cc.department ?? '', category: cc.category?.name ?? '',
         dayPlan: 0, nightPlan: 0, planned: 0,
         dayActual: a.dayActual ?? 0, nightActual: a.nightActual ?? 0, actual: a.actualCount ?? 0,
         male: a.maleActual ?? 0, female: a.femaleActual ?? 0,
@@ -373,13 +402,13 @@ export const reportService = {
     if (rows.length) {
       const total = rows.reduce(
         (t, r) => ({
-          unit: 'TOTAL', costCode: '', costCentre: periodLabel, department: '',
+          unit: 'TOTAL', costCode: '', costCentre: periodLabel, department: '', category: '',
           dayPlan: t.dayPlan + r.dayPlan, nightPlan: t.nightPlan + r.nightPlan, planned: t.planned + r.planned,
           dayActual: t.dayActual + r.dayActual, nightActual: t.nightActual + r.nightActual, actual: t.actual + r.actual,
           male: t.male + r.male, female: t.female + r.female,
           shortage: t.shortage + r.shortage, excess: t.excess + r.excess,
         }),
-        { unit: 'TOTAL', costCode: '', costCentre: periodLabel, department: '', dayPlan: 0, nightPlan: 0, planned: 0, dayActual: 0, nightActual: 0, actual: 0, male: 0, female: 0, shortage: 0, excess: 0 },
+        { unit: 'TOTAL', costCode: '', costCentre: periodLabel, department: '', category: '', dayPlan: 0, nightPlan: 0, planned: 0, dayActual: 0, nightActual: 0, actual: 0, male: 0, female: 0, shortage: 0, excess: 0 },
       );
       rows.push(total);
     }
@@ -393,6 +422,7 @@ export const reportService = {
         { key: 'costCode', label: 'Cost Code' },
         { key: 'costCentre', label: 'Cost Centre' },
         { key: 'department', label: 'Department' },
+        { key: 'category', label: 'Category' },
         { key: 'dayPlan', label: 'Day Plan' },
         { key: 'nightPlan', label: 'Night Plan' },
         { key: 'planned', label: mode === 'monthly' ? 'Monthly Plan' : 'Total Plan' },
@@ -412,7 +442,7 @@ export const reportService = {
   async planVsActual(f: ReportFilters) {
     const plans = await prisma.manpowerPlan.findMany({
       where: planWhere(f),
-      include: { costCenter: { include: { unit: true } } },
+      include: { costCenter: { include: { unit: true, category: true } } },
       orderBy: [{ unitId: 'asc' }],
     });
     const actuals = await prisma.manpowerActual.groupBy({
@@ -431,6 +461,7 @@ export const reportService = {
         costCode: p.costCenter.costCode,
         costCentre: p.costCenter.costCentre,
         department: p.costCenter.department ?? '',
+        category: p.costCenter.category?.name ?? '',
         planned: p.plannedCount,
         avgActual,
         variance: Math.round((avgActual - p.plannedCount) * 10) / 10,
@@ -443,6 +474,7 @@ export const reportService = {
         { key: 'costCode', label: 'Cost Code' },
         { key: 'costCentre', label: 'Cost Centre' },
         { key: 'department', label: 'Department' },
+        { key: 'category', label: 'Category' },
         { key: 'planned', label: 'Planned' },
         { key: 'avgActual', label: 'Avg Daily Actual' },
         { key: 'variance', label: 'Variance' },
@@ -455,7 +487,7 @@ export const reportService = {
   async varianceReport(f: ReportFilters, kind: 'shortage' | 'excess') {
     const records = await prisma.manpowerActual.findMany({
       where: { ...actualWhere(f), [kind]: { gt: 0 } },
-      include: { unit: true, costCenter: true },
+      include: { unit: true, costCenter: { include: { category: true } } },
       orderBy: { [kind]: 'desc' },
       take: 5000,
     });
@@ -465,6 +497,7 @@ export const reportService = {
       costCode: r.costCenter.costCode,
       costCentre: r.costCenter.costCentre,
       department: r.costCenter.department ?? '',
+      category: r.costCenter.category?.name ?? '',
       actual: r.actualCount,
       [kind]: kind === 'shortage' ? r.shortage : r.excess,
     }));
@@ -475,6 +508,7 @@ export const reportService = {
         { key: 'costCode', label: 'Cost Code' },
         { key: 'costCentre', label: 'Cost Centre' },
         { key: 'department', label: 'Department' },
+        { key: 'category', label: 'Category' },
         { key: 'actual', label: 'Actual' },
         { key: kind, label: kind === 'shortage' ? 'Shortage' : 'Excess' },
       ],
@@ -486,7 +520,7 @@ export const reportService = {
     const revMap = await approvedRevisionsByCostCenter(f.year, f.month, f);
     const records = await prisma.manpowerActual.findMany({
       where: actualWhere(f),
-      include: { unit: true, costCenter: true },
+      include: { unit: true, costCenter: { include: { category: true } } },
       orderBy: [{ date: 'desc' }],
       take: 10000,
     });
@@ -496,6 +530,7 @@ export const reportService = {
       costCode: r.costCenter.costCode,
       costCentre: r.costCenter.costCentre,
       department: r.costCenter.department ?? '',
+      category: r.costCenter.category?.name ?? '',
       planned: (() => {
         const revs = revMap.get(r.costCenterId)?.revs;
         return revs ? qtyOnDay(revs, r.date.getUTCFullYear(), r.date.getUTCMonth() + 1, r.date.getUTCDate()).plannedCount : 0;
@@ -514,6 +549,7 @@ export const reportService = {
         { key: 'costCode', label: 'Cost Code' },
         { key: 'costCentre', label: 'Cost Centre' },
         { key: 'department', label: 'Department' },
+        { key: 'category', label: 'Category' },
         { key: 'planned', label: 'Daily Plan' },
         { key: 'actual', label: 'Actual' },
         { key: 'male', label: 'Male Count' },
@@ -543,11 +579,11 @@ export const reportService = {
       where: { actual: aWhere },
       include: {
         vendor: { select: { vendorName: true } },
-        actual: { select: { date: true, costCenter: { include: { unit: true } } } },
+        actual: { select: { date: true, costCenter: { include: { unit: true, category: true } } } },
       },
       take: 20000,
     });
-    type Agg = { date: string; unit: string; costCode: string; costCentre: string; department: string; vendor: string; male: number; female: number };
+    type Agg = { date: string; unit: string; costCode: string; costCentre: string; department: string; category: string; vendor: string; male: number; female: number };
     const byKey = new Map<string, Agg>();
     for (const a of allocations) {
       const cc = a.actual.costCenter;
@@ -559,6 +595,7 @@ export const reportService = {
         costCode: cc.costCode,
         costCentre: cc.costCentre,
         department: cc.department ?? '',
+        category: cc.category?.name ?? '',
         vendor: a.vendor.vendorName,
         male: 0,
         female: 0,
@@ -573,7 +610,7 @@ export const reportService = {
     if (rows.length) {
       const total = rows.reduce(
         (t, r) => ({ ...t, male: t.male + r.male, female: t.female + r.female, total: t.total + r.total }),
-        { date: '', unit: 'TOTAL', costCode: '', costCentre: '', department: '', vendor: '', male: 0, female: 0, total: 0 },
+        { date: '', unit: 'TOTAL', costCode: '', costCentre: '', department: '', category: '', vendor: '', male: 0, female: 0, total: 0 },
       );
       rows.push(total);
     }
@@ -583,6 +620,7 @@ export const reportService = {
       { key: 'costCode', label: 'Cost Code' },
       { key: 'costCentre', label: 'Cost Centre' },
       { key: 'department', label: 'Department' },
+      { key: 'category', label: 'Category' },
       { key: 'vendor', label: 'Vendor' },
       { key: 'male', label: 'Male Count' },
       { key: 'female', label: 'Female Count' },
@@ -623,16 +661,16 @@ export const reportService = {
       savedByKey.set(key, set);
     }
 
-    type Row = { unit: string; costCode: string; costCentre: string; department: string; date: string; shift: string; planned: number; actual: string; _sort: string };
+    type Row = { unit: string; costCode: string; costCentre: string; department: string; category: string; date: string; shift: string; planned: number; actual: string; _sort: string };
     const rows: Row[] = [];
-    const ccMap = new Map<string, { unit: { code: string }; costCode: string; costCentre: string; department: string | null }>();
+    const ccMap = new Map<string, { unit: { code: string }; costCode: string; costCentre: string; department: string | null; category: { name: string } | null }>();
     for (let t = from.getTime(); t <= to.getTime(); t += 86400000) {
       const date = new Date(t);
       // plan differs per date (working days + revisions), so compute per date
       const planMap = await dailyPlanOnDate(date, f);
       const newIds = [...planMap.keys()].filter((id) => !ccMap.has(id));
       if (newIds.length) {
-        const ccs = await prisma.costCenter.findMany({ where: { id: { in: newIds } }, include: { unit: true } });
+        const ccs = await prisma.costCenter.findMany({ where: { id: { in: newIds } }, include: { unit: true, category: true } });
         for (const c of ccs) ccMap.set(c.id, c);
       }
       for (const [ccId, v] of planMap) {
@@ -647,6 +685,7 @@ export const reportService = {
             costCode: cc.costCode,
             costCentre: cc.costCentre,
             department: cc.department ?? '',
+            category: cc.category?.name ?? '',
             date: fmtDate(date),
             shift: shift === 'DAY' ? 'Day' : 'Night',
             planned,
@@ -666,10 +705,217 @@ export const reportService = {
         { key: 'costCode', label: 'Cost Code' },
         { key: 'costCentre', label: 'Cost Centre' },
         { key: 'department', label: 'Department' },
+        { key: 'category', label: 'Category' },
         { key: 'date', label: 'Date' },
         { key: 'shift', label: 'Shift' },
         { key: 'planned', label: 'Plan' },
         { key: 'actual', label: 'Actual' },
+      ],
+      rows: this.applySearch(rows, f.search),
+    };
+  },
+
+  /**
+   * Daily Summary locked to ONE shift: unlike the combined daily-summary,
+   * male/female are the true per-shift counts (summed from that shift's
+   * vendor allocations), not the day's combined maleActual/femaleActual.
+   */
+  async shiftLockedDailySummary(f: ReportFilters, shift: 'DAY' | 'NIGHT') {
+    const d = f.dateFrom ?? new Date();
+    const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    const periodLabel = fmtDate(date);
+    const aWhere = { ...actualWhere(f), date };
+    const [planMap, actuals, allocs] = await Promise.all([
+      dailyPlanOnDate(date, f),
+      prisma.manpowerActual.findMany({ where: aWhere, select: { costCenterId: true, dayActual: true, nightActual: true } }),
+      prisma.actualVendorAllocation.findMany({ where: { shift, actual: aWhere }, select: { male: true, female: true, actual: { select: { costCenterId: true } } } }),
+    ]);
+    const actualMap = new Map(actuals.map((a) => [a.costCenterId, shift === 'DAY' ? a.dayActual : a.nightActual]));
+    const mfMap = new Map<string, { male: number; female: number }>();
+    for (const r of allocs) {
+      const cur = mfMap.get(r.actual.costCenterId) ?? { male: 0, female: 0 };
+      cur.male += r.male;
+      cur.female += r.female;
+      mfMap.set(r.actual.costCenterId, cur);
+    }
+    const ccIds = new Set([...planMap.keys(), ...actualMap.keys()]);
+    const ccs = await prisma.costCenter.findMany({ where: { id: { in: [...ccIds] } }, include: { unit: true, category: true } });
+    const ccMap = new Map(ccs.map((c) => [c.id, c]));
+
+    const rows = [...ccIds]
+      .map((ccId) => {
+        const cc = ccMap.get(ccId);
+        const planned = (shift === 'DAY' ? planMap.get(ccId)?.qty.dayPlan : planMap.get(ccId)?.qty.nightPlan) ?? 0;
+        const actual = actualMap.get(ccId) ?? 0;
+        const mf = mfMap.get(ccId) ?? { male: 0, female: 0 };
+        return {
+          unit: cc?.unit.code ?? '',
+          costCode: cc?.costCode ?? '',
+          costCentre: cc?.costCentre ?? '',
+          department: cc?.department ?? '',
+          category: cc?.category?.name ?? '',
+          planned,
+          actual,
+          male: mf.male,
+          female: mf.female,
+          shortage: Math.max(planned - actual, 0),
+          excess: Math.max(actual - planned, 0),
+          attendance: attendancePct(actual, planned),
+        };
+      })
+      .filter((r) => r.planned > 0 || r.actual > 0)
+      .sort((a, b) => a.unit.localeCompare(b.unit) || a.costCode.localeCompare(b.costCode));
+
+    if (rows.length) {
+      const total = rows.reduce(
+        (t, r) => ({
+          unit: 'TOTAL', costCode: '', costCentre: periodLabel, department: '', category: '',
+          planned: t.planned + r.planned, actual: t.actual + r.actual, male: t.male + r.male, female: t.female + r.female,
+          shortage: t.shortage + r.shortage, excess: t.excess + r.excess, attendance: '',
+        }),
+        { unit: 'TOTAL', costCode: '', costCentre: periodLabel, department: '', category: '', planned: 0, actual: 0, male: 0, female: 0, shortage: 0, excess: 0, attendance: '' },
+      );
+      rows.push(total);
+    }
+
+    return {
+      columns: [
+        { key: 'unit', label: 'Unit' },
+        { key: 'costCode', label: 'Cost Code' },
+        { key: 'costCentre', label: 'Cost Centre' },
+        { key: 'department', label: 'Department' },
+        { key: 'category', label: 'Category' },
+        { key: 'planned', label: `${shift === 'DAY' ? 'Day' : 'Night'} Plan` },
+        { key: 'actual', label: `${shift === 'DAY' ? 'Day' : 'Night'} Actual` },
+        { key: 'male', label: 'Male' },
+        { key: 'female', label: 'Female' },
+        { key: 'shortage', label: 'Shortage' },
+        { key: 'excess', label: 'Excess' },
+        { key: 'attendance', label: 'Attendance %' },
+      ],
+      rows: this.applySearch(rows, f.search),
+    };
+  },
+
+  /**
+   * Category-wise summary: one row per (cost center, shift), grouped/sorted
+   * by category. 'daily' = a single date (dateFrom, default today);
+   * 'monthly' = the selected month, Calendar-Master-aware totals.
+   */
+  async categorySummary(f: ReportFilters, mode: 'daily' | 'monthly') {
+    let periodLabel: string;
+    let planQtyMap: Map<string, { dayPlan: number; nightPlan: number }>;
+    let actualByCc: Map<string, { dayActual: number; nightActual: number }>;
+    let mfByCcShift: Map<string, { male: number; female: number }>;
+
+    const buildMfMap = (allocs: { shift: string; male: number; female: number; actual: { costCenterId: string } }[]) => {
+      const map = new Map<string, { male: number; female: number }>();
+      for (const r of allocs) {
+        const key = `${r.actual.costCenterId}|${r.shift}`;
+        const cur = map.get(key) ?? { male: 0, female: 0 };
+        cur.male += r.male;
+        cur.female += r.female;
+        map.set(key, cur);
+      }
+      return map;
+    };
+
+    if (mode === 'daily') {
+      const d = f.dateFrom ?? new Date();
+      const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+      periodLabel = fmtDate(date);
+      const aWhere = { ...actualWhere(f), date };
+      const [planMap, actuals, allocs] = await Promise.all([
+        dailyPlanOnDate(date, f),
+        prisma.manpowerActual.findMany({ where: aWhere, select: { costCenterId: true, dayActual: true, nightActual: true } }),
+        prisma.actualVendorAllocation.findMany({ where: { actual: aWhere }, select: { shift: true, male: true, female: true, actual: { select: { costCenterId: true } } } }),
+      ]);
+      planQtyMap = new Map([...planMap.entries()].map(([cc, v]) => [cc, { dayPlan: v.qty.dayPlan, nightPlan: v.qty.nightPlan }]));
+      actualByCc = new Map(actuals.map((a) => [a.costCenterId, { dayActual: a.dayActual, nightActual: a.nightActual }]));
+      mfByCcShift = buildMfMap(allocs);
+    } else {
+      periodLabel = `${String(f.month).padStart(2, '0')}/${f.year}`;
+      const [totals, actuals, allocs] = await Promise.all([
+        monthlyPlanTotals(f.year, f.month, f),
+        prisma.manpowerActual.groupBy({ by: ['costCenterId'], where: actualWhere(f), _sum: { dayActual: true, nightActual: true } }),
+        prisma.actualVendorAllocation.findMany({ where: { actual: actualWhere(f) }, select: { shift: true, male: true, female: true, actual: { select: { costCenterId: true } } } }),
+      ]);
+      planQtyMap = new Map([...totals.entries()].map(([cc, v]) => [cc, { dayPlan: v.monthly.dayPlan, nightPlan: v.monthly.nightPlan }]));
+      actualByCc = new Map(actuals.map((a) => [a.costCenterId, { dayActual: a._sum.dayActual ?? 0, nightActual: a._sum.nightActual ?? 0 }]));
+      mfByCcShift = buildMfMap(allocs);
+    }
+
+    const ccIds = new Set([...planQtyMap.keys(), ...actualByCc.keys()]);
+    const ccs = await prisma.costCenter.findMany({ where: { id: { in: [...ccIds] } }, include: { unit: true, category: true } });
+    const ccMap = new Map(ccs.map((c) => [c.id, c]));
+
+    type DataRow = {
+      unit: string; costCode: string; costCentre: string; department: string;
+      shift: string; planned: number; actual: number; male: number; female: number;
+      shortage: number; excess: number; attendance: string;
+    };
+    const byCategory = new Map<string, DataRow[]>();
+    for (const ccId of ccIds) {
+      const cc = ccMap.get(ccId);
+      if (!cc) continue;
+      const plan = planQtyMap.get(ccId) ?? { dayPlan: 0, nightPlan: 0 };
+      const act = actualByCc.get(ccId) ?? { dayActual: 0, nightActual: 0 };
+      const shifts: { key: 'DAY' | 'NIGHT'; label: string; planned: number; actual: number }[] = [
+        { key: 'DAY', label: 'Day', planned: plan.dayPlan, actual: act.dayActual },
+        { key: 'NIGHT', label: 'Night', planned: plan.nightPlan, actual: act.nightActual },
+      ];
+      const category = cc.category?.name ?? 'Uncategorized';
+      for (const s of shifts) {
+        if (s.planned <= 0 && s.actual <= 0) continue; // nothing to show for this shift
+        const mf = mfByCcShift.get(`${ccId}|${s.key}`) ?? { male: 0, female: 0 };
+        const list = byCategory.get(category) ?? [];
+        list.push({
+          unit: cc.unit.code,
+          costCode: cc.costCode,
+          costCentre: cc.costCentre,
+          department: cc.department ?? '',
+          shift: s.label,
+          planned: s.planned,
+          actual: s.actual,
+          male: mf.male,
+          female: mf.female,
+          shortage: Math.max(s.planned - s.actual, 0),
+          excess: Math.max(s.actual - s.planned, 0),
+          attendance: attendancePct(s.actual, s.planned),
+        });
+        byCategory.set(category, list);
+      }
+    }
+
+    // One section per category: a header row, its data rows, then a "Total <Category>" subtotal row.
+    const blank = { unit: '', costCode: '', costCentre: '', department: '', shift: '', planned: '' as unknown as number, actual: '' as unknown as number, male: '' as unknown as number, female: '' as unknown as number, shortage: '' as unknown as number, excess: '' as unknown as number, attendance: '' };
+    const rows: Record<string, unknown>[] = [];
+    const categoryNames = [...byCategory.keys()].sort((a, b) => a.localeCompare(b));
+    for (const category of categoryNames) {
+      const list = byCategory.get(category)!.sort((a, b) => a.unit.localeCompare(b.unit) || a.costCode.localeCompare(b.costCode) || a.shift.localeCompare(b.shift));
+      rows.push({ ...blank, costCentre: category, _section: true });
+      for (const r of list) rows.push(r);
+      const total = list.reduce(
+        (t, r) => ({ planned: t.planned + r.planned, actual: t.actual + r.actual, male: t.male + r.male, female: t.female + r.female, shortage: t.shortage + r.shortage, excess: t.excess + r.excess }),
+        { planned: 0, actual: 0, male: 0, female: 0, shortage: 0, excess: 0 },
+      );
+      rows.push({ ...blank, costCentre: `Total ${category}`, ...total, attendance: attendancePct(total.actual, total.planned), _total: true });
+    }
+
+    return {
+      columns: [
+        { key: 'unit', label: 'Unit' },
+        { key: 'costCode', label: 'Cost Code' },
+        { key: 'costCentre', label: 'Cost Centre' },
+        { key: 'department', label: 'Department' },
+        { key: 'shift', label: 'Shift' },
+        { key: 'planned', label: 'Plan' },
+        { key: 'actual', label: 'Actual' },
+        { key: 'male', label: 'Male' },
+        { key: 'female', label: 'Female' },
+        { key: 'shortage', label: 'Shortage' },
+        { key: 'excess', label: 'Excess' },
+        { key: 'attendance', label: 'Attendance %' },
       ],
       rows: this.applySearch(rows, f.search),
     };

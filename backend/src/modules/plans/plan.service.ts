@@ -49,6 +49,7 @@ export const planService = {
       ...(filters.month ? { month: Number(filters.month) } : {}),
       ...(filters.unitId ? { unitId: String(filters.unitId) } : {}),
       ...(filters.costCenterId ? { costCenterId: String(filters.costCenterId) } : {}),
+      ...(filters.categoryId ? { costCenter: { categoryId: String(filters.categoryId) } } : {}),
       ...(filters.status ? { status: filters.status as PlanStatus } : {}),
     };
     const [rows, total] = await Promise.all([
@@ -65,10 +66,10 @@ export const planService = {
   },
 
   /** Every plan row for a month keyed by cost center — powers the grid editor. */
-  async grid(year: number, month: number, unitId?: string) {
+  async grid(year: number, month: number, unitId?: string, categoryId?: string) {
     const costCenters = await prisma.costCenter.findMany({
-      where: { deletedAt: null, status: 'ACTIVE', ...(unitId ? { unitId } : {}) },
-      include: { unit: true },
+      where: { deletedAt: null, status: 'ACTIVE', ...(unitId ? { unitId } : {}), ...(categoryId ? { categoryId } : {}) },
+      include: { unit: true, category: true },
       orderBy: [{ unit: { code: 'asc' } }, { costCode: 'asc' }],
     });
     const plans = await prisma.manpowerPlan.findMany({
@@ -85,6 +86,7 @@ export const planService = {
         costCode: cc.costCode,
         costCentre: cc.costCentre,
         department: cc.department ?? null,
+        category: cc.category?.name ?? null,
         planId: plan?.id ?? null,
         plannedCount: plan?.plannedCount ?? null,
         dayPlan: plan?.dayPlan ?? null,

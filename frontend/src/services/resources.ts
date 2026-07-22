@@ -2,6 +2,7 @@ import { api } from './api';
 import type {
   ActualGridRow,
   AuthUser,
+  Category,
   CostCenter,
   DashboardData,
   LoginResponse,
@@ -47,6 +48,7 @@ function crud<T>(base: string) {
 
 export const vendorApi = crud<Vendor>('/vendors');
 export const unitApi = crud<Unit>('/units');
+export const categoryApi = crud<Category>('/categories');
 export const costCenterApi = crud<CostCenter>('/cost-centers');
 export const userApi = crud<any>('/users');
 export const rolesApi = { list: () => api.get('/roles').then((r) => r.data.data) };
@@ -55,8 +57,8 @@ export const rolesApi = { list: () => api.get('/roles').then((r) => r.data.data)
 export const planApi = {
   ...crud<ManpowerPlan>('/plans'),
   pending: () => list<ManpowerPlan>('/plans/pending'),
-  grid: (year: number, month: number, unitId?: string) =>
-    api.get('/plans/grid', { params: { year, month, unitId } }).then((r) => r.data.data as PlanGridRow[]),
+  grid: (year: number, month: number, unitId?: string, categoryId?: string) =>
+    api.get('/plans/grid', { params: { year, month, unitId, categoryId } }).then((r) => r.data.data as PlanGridRow[]),
   saveGrid: (year: number, month: number, rows: { costCenterId: string; dayPlan: number; nightPlan: number; remarks?: string | null }[], effectiveFrom?: string) =>
     api.post('/plans/grid', { year, month, rows, effectiveFrom }).then((r) => r.data.data as { saved: number; unchanged: number; errors: { row: number; message: string }[] }),
   approve: (id: string, remarks?: string) => api.post(`/plans/${id}/approve`, { remarks }).then((r) => r.data.data),
@@ -72,8 +74,8 @@ export const planApi = {
 // ---- Actuals ----
 export const actualApi = {
   list: (params?: Record<string, unknown>) => list<ManpowerActual>('/actuals', params),
-  grid: (date: string, unitId?: string) =>
-    api.get('/actuals/grid', { params: { date, unitId } }).then((r) => r.data.data as ActualGridRow[]),
+  grid: (date: string, unitId?: string, categoryId?: string) =>
+    api.get('/actuals/grid', { params: { date, unitId, categoryId } }).then((r) => r.data.data as ActualGridRow[]),
   save: (body: Partial<ManpowerActual>) => api.post('/actuals', body).then((r) => r.data.data as ManpowerActual),
   update: (id: string, body: Partial<ManpowerActual>) => api.put(`/actuals/${id}`, body).then((r) => r.data.data),
   remove: (id: string) => api.delete(`/actuals/${id}`).then((r) => r.data),

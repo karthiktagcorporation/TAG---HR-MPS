@@ -41,6 +41,7 @@ export default function DashboardPage() {
       date: date || undefined,
       unitId: period.unitId,
       costCenterId: period.costCenterId,
+      categoryId: period.categoryId,
       shift: shift || undefined,
     }),
     [period, date, shift],
@@ -59,7 +60,7 @@ export default function DashboardPage() {
         breadcrumbs={['TAG - MPS', 'Dashboard']}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            <PeriodFilters value={period} onChange={setPeriod} show={{ unit: true, costCenter: true }} />
+            <PeriodFilters value={period} onChange={setPeriod} show={{ unit: true, costCenter: true, category: true }} />
             <Select value={shift} onChange={(e) => setShift(e.target.value as '' | 'DAY' | 'NIGHT')} className="w-36">
               <option value="">All Shift</option>
               <option value="DAY">Day Shift</option>
